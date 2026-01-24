@@ -1,0 +1,63 @@
+.skill-editor {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.status-bar {
+  height: 56px;
+  background: #fff;
+  border-bottom: 1px solid #e8e8e8;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.status-bar-left {
+  display: flex;
+  align-items: center;
+}
+
+.status-bar-right {
+  display: flex;
+  align-items: center;
+}
+
+/* 对话消息样式优化 */
+.skill-editor .ant-avatar {
+  flex-shrink: 0;
+}
+
+/* 文件树样式 */
+.skill-editor .ant-tree {
+  background: transparent;
+}
+
+.skill-editor .ant-tree-node-content-wrapper:hover {
+  background-color: #f0f0f0;
+}
+
+.skill-editor .ant-tree-node-selected .ant-tree-node-content-wrapper {
+  background-color: #e6f4ff !important;
+}
+
+/* 滚动条样式 */
+.skill-editor ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.skill-editor ::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+.skill-editor ::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+}
+
+.skill-editor ::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
