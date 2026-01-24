@@ -23,17 +23,17 @@ import {
   ToolOutlined,
   LoadingOutlined,
   CheckCircleOutlined,
-  UploadOutlined,
   BulbOutlined,
   DatabaseOutlined,
-  UserOutlined
+  UserOutlined,
+  PaperClipOutlined
 } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
 import { SkillItem } from './Skill';
+import MentionEditor, { MentionEditorHandle } from '../components/MentionEditor';
 import './Frontend.css';
 
 const { Sider, Content } = Layout;
-const { TextArea } = Input;
 
 interface ChatHistory {
   id: string;
@@ -123,8 +123,8 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
   const [showSkillsPanel, setShowSkillsPanel] = useState(false);
   const [activeTab, setActiveTab] = useState('all');
   const [searchKeyword, setSearchKeyword] = useState('');
-  const textAreaRef = useRef<any>(null);
-  const [cursorPosition, setCursorPosition] = useState(0);
+  const editorRef = useRef<MentionEditorHandle>(null);
+  const conversationEditorRef = useRef<MentionEditorHandle>(null);
 
   // 群组相关状态
   const [showGroupModal, setShowGroupModal] = useState(false);
@@ -135,7 +135,6 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
   const [currentGroup, setCurrentGroup] = useState<AgentGroup | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [mentionedAgents, setMentionedAgents] = useState<Agent[]>([]);
-  const [showAgentPanel, setShowAgentPanel] = useState(false);
 
   // 对话管理相关状态
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -222,29 +221,6 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
   const handleEnterGroup = (group: AgentGroup) => {
     setCurrentGroup(group);
     setMessages([]);
-  };
-
-  // 处理@智能体
-  const handleMentionAgent = (agent: Agent) => {
-    if (mentionedAgents.length >= 10) {
-      return;
-    }
-    if (!mentionedAgents.find(a => a.id === agent.id)) {
-      setMentionedAgents([...mentionedAgents, agent]);
-    }
-    setShowAgentPanel(false);
-  };
-
-  // @all
-  const handleMentionAll = () => {
-    if (currentGroup) {
-      setMentionedAgents(currentGroup.members.slice(0, 10));
-      setShowAgentPanel(false);
-    } else if (currentConversation) {
-      const allMembers = currentConversation.agents || currentConversation.group?.members || [];
-      setMentionedAgents(allMembers.slice(0, 10));
-      setShowAgentPanel(false);
-    }
   };
 
   // 模拟智能体回复
@@ -539,12 +515,6 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
     }
   };
 
-  // @提及处理（在新建对话界面）
-  const handleMentionInNewChat = (type: 'agent' | 'group') => {
-    setMentionType(type);
-    setShowMentionPanel(true);
-  };
-
   // 选择群组
   const handleSelectGroup = (group: AgentGroup) => {
     if (!selectedGroups.find(g => g.id === group.id)) {
@@ -562,60 +532,28 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
     setShowMentionPanel(false);
   };
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const value = e.target.value;
-    const curPos = e.target.selectionStart || 0;
-
-    setInputValue(value);
-    setCursorPosition(curPos);
-
-    // Check if @ is typed
-    const lastChar = value.charAt(curPos - 1);
-    if (lastChar === '@') {
-      // 在群组对话中显示智能体面板
-      if (currentGroup || currentConversation) {
-        setShowAgentPanel(true);
-      } else {
-        // 在新建对话界面显示@面板
-        setShowMentionPanel(true);
-      }
-    } else if (showSkillsPanel && !value.includes('@')) {
-      setShowSkillsPanel(false);
-    } else if (showAgentPanel && !value.includes('@')) {
-      setShowAgentPanel(false);
-    } else if (showMentionPanel && !value.includes('@')) {
-      setShowMentionPanel(false);
-    }
-  };
-
   const handleSkillSelect = (skillName: string) => {
     const beforeAt = inputValue.substring(0, inputValue.lastIndexOf('@'));
-    const afterCursor = inputValue.substring(cursorPosition);
-    const newValue = beforeAt + '@' + skillName + ' ' + afterCursor;
+    const newValue = beforeAt + '@' + skillName + ' ';
 
     setInputValue(newValue);
     setShowSkillsPanel(false);
 
-    // Focus back to textarea
+    // Focus back to editor
     setTimeout(() => {
-      if (textAreaRef.current) {
-        textAreaRef.current.focus();
-      }
+      editorRef.current?.focus();
     }, 100);
   };
 
   const handleFileSelect = (fileName: string) => {
     const beforeAt = inputValue.substring(0, inputValue.lastIndexOf('@'));
-    const afterCursor = inputValue.substring(cursorPosition);
-    const newValue = beforeAt + '@' + fileName + ' ' + afterCursor;
+    const newValue = beforeAt + '@' + fileName + ' ';
 
     setInputValue(newValue);
     setShowSkillsPanel(false);
 
     setTimeout(() => {
-      if (textAreaRef.current) {
-        textAreaRef.current.focus();
-      }
+      editorRef.current?.focus();
     }, 100);
   };
 
@@ -1093,54 +1031,6 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                 boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
                 padding: '16px'
               }}>
-                {/* @智能体面板 */}
-                {showAgentPanel && (currentGroup || currentConversation) && (
-                  <div style={{
-                    marginBottom: '12px',
-                    padding: '12px',
-                    background: '#F9FAFB',
-                    borderRadius: '8px',
-                    maxHeight: '200px',
-                    overflowY: 'auto'
-                  }}>
-                    <div
-                      onClick={handleMentionAll}
-                      style={{
-                        padding: '8px 12px',
-                        borderRadius: '6px',
-                        cursor: 'pointer',
-                        marginBottom: '8px',
-                        background: '#EEF2FF',
-                        color: '#6366F1',
-                        fontWeight: 500
-                      }}
-                    >
-                      @all (提及所有成员)
-                    </div>
-                    {(currentGroup?.members || currentConversation?.agents || currentConversation?.group?.members || []).map(agent => (
-                      <div
-                        key={agent.id}
-                        onClick={() => handleMentionAgent(agent)}
-                        style={{
-                          padding: '8px 12px',
-                          borderRadius: '6px',
-                          cursor: 'pointer',
-                          marginBottom: '4px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '8px',
-                          transition: 'background 0.2s'
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = '#fff'}
-                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                      >
-                        <span>{agent.icon}</span>
-                        <span>{agent.name}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
                 {/* 已@的智能体 */}
                 {mentionedAgents.length > 0 && (
                   <div style={{ marginBottom: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -1165,16 +1055,33 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                 )}
 
                 <div style={{ position: 'relative' }}>
-                  <TextArea
-                    ref={textAreaRef}
+                  <MentionEditor
+                    ref={conversationEditorRef}
                     value={inputValue}
-                    onChange={handleInputChange}
+                    onChange={(value) => setInputValue(value)}
                     placeholder="输入消息... (输入 @ 提及智能体)"
-                    autoSize={{ minRows: 3, maxRows: 6 }}
-                    bordered={false}
+                    agents={(currentGroup?.members || currentConversation?.agents || currentConversation?.group?.members || []).filter(a => a.id !== 'all')}
+                    groups={[]}
+                    onSelectAgent={(agent) => {
+                      if (agent.id === 'all') {
+                        const allMembers = currentGroup?.members || currentConversation?.agents || currentConversation?.group?.members || [];
+                        setMentionedAgents(allMembers.slice(0, 10));
+                      } else {
+                        const agentData = (currentGroup?.members || currentConversation?.agents || currentConversation?.group?.members || [])
+                          .find(a => a.id === agent.id);
+                        if (agentData && !mentionedAgents.find(a => a.id === agent.id)) {
+                          if (mentionedAgents.length < 10) {
+                            setMentionedAgents([...mentionedAgents, agentData]);
+                          }
+                        }
+                      }
+                    }}
+                    minRows={3}
+                    maxRows={6}
                     style={{
                       fontSize: '14px',
-                      resize: 'none'
+                      border: 'none',
+                      width: '100%'
                     }}
                   />
                 </div>
@@ -1187,8 +1094,19 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                   paddingTop: '12px',
                   borderTop: '1px solid #f0f0f0'
                 }}>
-                  <div style={{ fontSize: '12px', color: '#999' }}>
-                    {mentionedAgents.length > 0 ? `已选择 ${mentionedAgents.length} 个智能体` : '输入 @ 选择智能体'}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ fontSize: '12px', color: '#999' }}>
+                      {mentionedAgents.length > 0 ? `已选择 ${mentionedAgents.length} 个智能体` : '输入 @ 选择智能体'}
+                    </div>
+                    <Button
+                      type="default"
+                      size="small"
+                      icon={<span style={{ fontSize: '14px', fontWeight: 'bold' }}>@</span>}
+                      onClick={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        conversationEditorRef.current?.openMentionPanel(rect);
+                      }}
+                    />
                   </div>
                   <Button
                     type="primary"
@@ -1633,16 +1551,35 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
               )}
 
               <div style={{ position: 'relative' }}>
-                <TextArea
-                  ref={textAreaRef}
+                <MentionEditor
+                  ref={editorRef}
                   value={inputValue}
-                  onChange={handleInputChange}
+                  onChange={(value) => setInputValue(value)}
                   placeholder="给我发消息或布置任务（输入 @ 提及智能体或群组）"
-                  autoSize={{ minRows: 4, maxRows: 8 }}
-                  bordered={false}
+                  agents={allAgents}
+                  groups={agentGroups.map(group => ({
+                    id: group.id,
+                    name: group.name,
+                    icon: '👥',
+                    color: '#6366F1'
+                  }))}
+                  onSelectAgent={(agent) => {
+                    const isGroup = agentGroups.find(g => g.id === agent.id);
+                    if (isGroup && !selectedGroups.find(g => g.id === agent.id)) {
+                      setSelectedGroups([...selectedGroups, isGroup]);
+                    } else if (!isGroup) {
+                      const agentData = allAgents.find(a => a.id === agent.id);
+                      if (agentData && !mentionedAgents.find(a => a.id === agent.id)) {
+                        setMentionedAgents([...mentionedAgents, agentData]);
+                      }
+                    }
+                  }}
+                  minRows={4}
+                  maxRows={8}
                   style={{
                     fontSize: '16px',
-                    resize: 'none'
+                    border: 'none',
+                    width: '100%'
                   }}
                 />
               </div>
@@ -1656,16 +1593,25 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
               borderTop: '1px solid #f0f0f0'
             }}>
               <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-                {/* 上传文件按钮 */}
+                {/* @ 提及按钮 */}
+                <Button
+                  type="default"
+                  icon={<span style={{ fontSize: '16px', fontWeight: 'bold' }}>@</span>}
+                  style={{ borderRadius: '6px' }}
+                  onClick={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    editorRef.current?.openMentionPanel(rect);
+                  }}
+                />
+
+                {/* 上传文件按钮 - 只显示别针图标 */}
                 <label htmlFor="file-upload">
                   <Button
                     type="default"
-                    icon={<UploadOutlined />}
+                    icon={<PaperClipOutlined />}
                     style={{ borderRadius: '6px' }}
                     onClick={() => document.getElementById('file-upload')?.click()}
-                  >
-                    上传文件
-                  </Button>
+                  />
                 </label>
                 <input
                   id="file-upload"
@@ -1675,7 +1621,7 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                   onChange={handleFileUpload}
                 />
 
-                {/* 深度思考按钮 */}
+                {/* 深度思考按钮 - 未选中时只显示图标 */}
                 <Button
                   type={deepThinking ? 'primary' : 'default'}
                   icon={<BulbOutlined />}
@@ -1686,7 +1632,7 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                   }}
                   onClick={() => setDeepThinking(!deepThinking)}
                 >
-                  深度思考
+                  {deepThinking ? '深度思考' : ''}
                 </Button>
 
                 {/* 知识库按钮 */}
