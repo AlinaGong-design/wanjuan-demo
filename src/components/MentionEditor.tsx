@@ -11,7 +11,7 @@ type MentionElement = {
   character: string;
   agentId: string;
   agentIcon?: string;
-  mentionType: 'agent' | 'skill';  // 区分智能体和技能
+  mentionType: 'agent' | 'skill' | 'group';  // 区分智能体、技能和群组
   children: CustomText[]
 };
 type CustomElement = ParagraphElement | MentionElement;
@@ -30,6 +30,9 @@ interface Agent {
   name: string;
   icon?: string;
   color?: string;
+  type?: 'agent' | 'skill' | 'group';
+  category?: string;  // 添加类别字段
+  lastUsed?: number;  // 添加最后使用时间
 }
 
 interface MentionEditorProps {
@@ -37,7 +40,7 @@ interface MentionEditorProps {
   onChange: (value: string) => void;
   placeholder?: string;
   agents?: Agent[];
-  groups?: Agent[];  // 新增：群组列表
+  groups?: Agent[];  // 改回群组
   onSelectAgent?: (agent: Agent) => void;
   style?: React.CSSProperties;
   minRows?: number;
@@ -65,6 +68,7 @@ const MentionEditor = forwardRef<MentionEditorHandle, MentionEditorProps>(({
   const [target, setTarget] = useState<Range | null>(null);
   const [index, setIndex] = useState(0);
   const [search, setSearch] = useState('');
+  const [agentSearch, setAgentSearch] = useState('');  // 智能体搜索
   const [manualTrigger, setManualTrigger] = useState(false);
   const [buttonPosition, setButtonPosition] = useState<DOMRect | null>(null);
   const [activeTab, setActiveTab] = useState<'agents' | 'groups'>('agents');
@@ -113,32 +117,53 @@ const MentionEditor = forwardRef<MentionEditorHandle, MentionEditorProps>(({
     ];
   });
 
-  // 过滤智能体和群组列表
-  const currentList = activeTab === 'agents' ? agents : groups;
-  const filteredItems = currentList
-    .filter((item) => item.name.toLowerCase().includes(search.toLowerCase()))
-    .slice(0, 10);
+  // 过滤和分组智能体
+  const filteredAgents = agents.filter((agent) =>
+    agent.name.toLowerCase().includes(agentSearch.toLowerCase())
+  );
+
+  // 按类别分组
+  const groupedAgents: Record<string, Agent[]> = {};
+  filteredAgents.forEach(agent => {
+    const category = agent.category || '其他';
+    if (!groupedAgents[category]) {
+      groupedAgents[category] = [];
+    }
+    groupedAgents[category].push(agent);
+  });
+
+  // 群组按最后使用时间排序
+  const sortedGroups = [...groups].sort((a, b) => {
+    const aTime = a.lastUsed || 0;
+    const bTime = b.lastUsed || 0;
+    return bTime - aTime;  // 降序，最近使用的在前
+  });
+
+  // 当前列表（用于键盘导航）
+  const currentList = activeTab === 'agents'
+    ? filteredAgents
+    : sortedGroups.filter(g => g.name.toLowerCase().includes(search.toLowerCase()));
 
   const onKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
-      if (target && filteredItems.length > 0) {
+      if (target && currentList.length > 0) {
         switch (event.key) {
           case 'ArrowDown':
             event.preventDefault();
-            setIndex((prevIndex) => (prevIndex >= filteredItems.length - 1 ? 0 : prevIndex + 1));
+            setIndex((prevIndex) => (prevIndex >= currentList.length - 1 ? 0 : prevIndex + 1));
             break;
           case 'ArrowUp':
             event.preventDefault();
-            setIndex((prevIndex) => (prevIndex <= 0 ? filteredItems.length - 1 : prevIndex - 1));
+            setIndex((prevIndex) => (prevIndex <= 0 ? currentList.length - 1 : prevIndex - 1));
             break;
           case 'Tab':
           case 'Enter':
             event.preventDefault();
-            if (filteredItems[index]) {
+            if (currentList[index]) {
               Transforms.select(editor, target);
-              insertMention(editor, filteredItems[index], manualTrigger);
+              insertMention(editor, currentList[index], manualTrigger);
               if (onSelectAgent) {
-                onSelectAgent(filteredItems[index]);
+                onSelectAgent(currentList[index]);
               }
               setTarget(null);
               setManualTrigger(false);
@@ -154,11 +179,11 @@ const MentionEditor = forwardRef<MentionEditorHandle, MentionEditorProps>(({
         }
       }
     },
-    [index, target, filteredItems, editor, onSelectAgent, manualTrigger]
+    [index, target, currentList, editor, onSelectAgent, manualTrigger]
   );
 
   useEffect(() => {
-    if (target && filteredItems.length > 0) {
+    if (target && currentList.length > 0) {
       const el = portalRef.current;
       if (!el) return;
 
@@ -188,7 +213,7 @@ const MentionEditor = forwardRef<MentionEditorHandle, MentionEditorProps>(({
         }
       }
     }
-  }, [filteredItems.length, editor, target, buttonPosition]);
+  }, [currentList.length, editor, target, buttonPosition]);
 
   const handleChange = (newValue: Descendant[]) => {
     setSlateValue(newValue);
@@ -252,8 +277,8 @@ const MentionEditor = forwardRef<MentionEditorHandle, MentionEditorProps>(({
               background: '#fff',
               borderRadius: '8px',
               boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-              minWidth: '280px',
-              maxHeight: '400px',
+              minWidth: '320px',
+              maxHeight: '450px',
               overflow: 'hidden',
             }}
           >
@@ -292,8 +317,8 @@ const MentionEditor = forwardRef<MentionEditorHandle, MentionEditorProps>(({
                     padding: '8px 16px',
                     textAlign: 'center',
                     cursor: 'pointer',
-                    borderBottom: activeTab === 'groups' ? '2px solid #6366F1' : '2px solid transparent',
-                    color: activeTab === 'groups' ? '#6366F1' : '#666',
+                    borderBottom: activeTab === 'groups' ? '2px solid #10B981' : '2px solid transparent',
+                    color: activeTab === 'groups' ? '#10B981' : '#666',
                     fontWeight: activeTab === 'groups' ? 500 : 400,
                     transition: 'all 0.2s',
                   }}
@@ -303,44 +328,138 @@ const MentionEditor = forwardRef<MentionEditorHandle, MentionEditorProps>(({
               </div>
             )}
 
+            {/* 搜索框（仅智能体） */}
+            {activeTab === 'agents' && (
+              <div style={{ padding: '12px 12px 8px 12px' }}>
+                <input
+                  type="text"
+                  placeholder="搜索智能体..."
+                  value={agentSearch}
+                  onChange={(e) => {
+                    setAgentSearch(e.target.value);
+                    setIndex(0);
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '6px 12px',
+                    border: '1px solid #e5e7eb',
+                    borderRadius: '6px',
+                    outline: 'none',
+                    fontSize: '14px',
+                  }}
+                  onFocus={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') {
+                      setAgentSearch('');
+                      e.stopPropagation();
+                    }
+                  }}
+                />
+              </div>
+            )}
+
             {/* 列表内容 */}
             <div style={{
-              maxHeight: '300px',
+              maxHeight: activeTab === 'agents' ? '320px' : '350px',
               overflowY: 'auto',
               padding: '8px 0',
             }}>
-              {filteredItems.length > 0 ? (
-                filteredItems.map((item, i) => (
-                  <div
-                    key={item.id}
-                    onClick={() => {
-                      Transforms.select(editor, target);
-                      insertMention(editor, item, manualTrigger);
-                      if (onSelectAgent) {
-                        onSelectAgent(item);
-                      }
-                      setTarget(null);
-                      setManualTrigger(false);
-                      setButtonPosition(null);
-                    }}
-                    style={{
-                      padding: '8px 16px',
-                      cursor: 'pointer',
-                      background: i === index ? '#f5f5f5' : 'transparent',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                    }}
-                    onMouseEnter={() => setIndex(i)}
-                  >
-                    {item.icon && <span style={{ fontSize: '16px' }}>{item.icon}</span>}
-                    <span>{item.name}</span>
+              {activeTab === 'agents' ? (
+                // 智能体列表 - 分组显示
+                Object.keys(groupedAgents).length > 0 ? (
+                  Object.entries(groupedAgents).map(([category, categoryAgents]) => (
+                    <div key={category} style={{ marginBottom: '12px' }}>
+                      <div style={{
+                        padding: '4px 16px',
+                        fontSize: '12px',
+                        color: '#9ca3af',
+                        fontWeight: 500,
+                        background: '#f9fafb',
+                      }}>
+                        {category}
+                      </div>
+                      {categoryAgents.map((agent) => {
+                        const globalIndex = currentList.findIndex(a => a.id === agent.id);
+                        return (
+                          <div
+                            key={agent.id}
+                            onClick={() => {
+                              Transforms.select(editor, target);
+                              insertMention(editor, { ...agent, type: 'agent' }, manualTrigger);
+                              if (onSelectAgent) {
+                                onSelectAgent(agent);
+                              }
+                              setTarget(null);
+                              setManualTrigger(false);
+                              setButtonPosition(null);
+                              setAgentSearch('');
+                            }}
+                            style={{
+                              padding: '8px 16px 8px 24px',
+                              cursor: 'pointer',
+                              background: globalIndex === index ? '#f5f5f5' : 'transparent',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                            }}
+                            onMouseEnter={() => setIndex(globalIndex)}
+                          >
+                            {agent.icon && <span style={{ fontSize: '16px' }}>{agent.icon}</span>}
+                            <span>{agent.name}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))
+                ) : (
+                  <div style={{ padding: '16px', textAlign: 'center', color: '#999' }}>
+                    未找到智能体
                   </div>
-                ))
+                )
               ) : (
-                <div style={{ padding: '16px', textAlign: 'center', color: '#999' }}>
-                  暂无{activeTab === 'agents' ? '智能体' : '群组'}
-                </div>
+                // 群组列表 - 按使用时间排序
+                sortedGroups.filter(g => g.name.toLowerCase().includes(search.toLowerCase())).length > 0 ? (
+                  sortedGroups
+                    .filter(g => g.name.toLowerCase().includes(search.toLowerCase()))
+                    .map((group, i) => (
+                      <div
+                        key={group.id}
+                        onClick={() => {
+                          Transforms.select(editor, target);
+                          insertMention(editor, { ...group, type: 'group' }, manualTrigger);
+                          if (onSelectAgent) {
+                            onSelectAgent(group);
+                          }
+                          setTarget(null);
+                          setManualTrigger(false);
+                          setButtonPosition(null);
+                        }}
+                        style={{
+                          padding: '8px 16px',
+                          cursor: 'pointer',
+                          background: i === index ? '#f5f5f5' : 'transparent',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                        }}
+                        onMouseEnter={() => setIndex(i)}
+                      >
+                        {group.icon && <span style={{ fontSize: '16px' }}>{group.icon}</span>}
+                        <div style={{ flex: 1 }}>
+                          <div>{group.name}</div>
+                          {group.lastUsed && (
+                            <div style={{ fontSize: '11px', color: '#999', marginTop: '2px' }}>
+                              最近使用
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                ) : (
+                  <div style={{ padding: '16px', textAlign: 'center', color: '#999' }}>
+                    暂无群组
+                  </div>
+                )
               )}
             </div>
           </div>
@@ -373,6 +492,7 @@ const insertMention = (editor: Editor, agent: Agent, isManualTrigger: boolean = 
     character: agent.name,
     agentId: agent.id,
     agentIcon: agent.icon,
+    mentionType: agent.type || 'agent',  // 设置类型
     children: [{ text: '' }],
   };
 
@@ -422,6 +542,8 @@ const Element = ({ attributes, children, element }: RenderElementProps) => {
 // Mention 组件
 const Mention = ({ attributes, children, element }: any) => {
   const selected = false;
+  const isGroup = element.mentionType === 'group';
+
   return (
     <span
       {...attributes}
@@ -432,9 +554,11 @@ const Mention = ({ attributes, children, element }: any) => {
         verticalAlign: 'baseline',
         display: 'inline-block',
         borderRadius: '4px',
-        backgroundColor: selected ? '#B4D5FF' : '#E8F0FE',
+        backgroundColor: selected
+          ? (isGroup ? '#D1FAE5' : '#B4D5FF')
+          : (isGroup ? '#ECFDF5' : '#E8F0FE'),  // 群组：浅绿色，智能体：浅蓝色
         fontSize: '0.9em',
-        color: '#1a73e8',
+        color: isGroup ? '#10B981' : '#1a73e8',  // 群组：绿色，智能体：蓝色
         cursor: 'pointer',
       }}
     >

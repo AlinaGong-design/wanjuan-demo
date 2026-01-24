@@ -1031,28 +1031,7 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                 boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
                 padding: '16px'
               }}>
-                {/* 已@的智能体 */}
-                {mentionedAgents.length > 0 && (
-                  <div style={{ marginBottom: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                    {mentionedAgents.map(agent => (
-                      <Tag
-                        key={agent.id}
-                        closable
-                        onClose={() => setMentionedAgents(mentionedAgents.filter(a => a.id !== agent.id))}
-                        style={{
-                          padding: '4px 12px',
-                          borderRadius: '12px',
-                          background: `${agent.color}22`,
-                          border: `1px solid ${agent.color}`,
-                          color: agent.color
-                        }}
-                      >
-                        <span style={{ marginRight: '4px' }}>{agent.icon}</span>
-                        @{agent.name}
-                      </Tag>
-                    ))}
-                  </div>
-                )}
+                {/* 移除已@的智能体标签展示 */}
 
                 <div style={{ position: 'relative' }}>
                   <MentionEditor
@@ -1063,16 +1042,11 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                     agents={(currentGroup?.members || currentConversation?.agents || currentConversation?.group?.members || []).filter(a => a.id !== 'all')}
                     groups={[]}
                     onSelectAgent={(agent) => {
-                      if (agent.id === 'all') {
-                        const allMembers = currentGroup?.members || currentConversation?.agents || currentConversation?.group?.members || [];
-                        setMentionedAgents(allMembers.slice(0, 10));
-                      } else {
-                        const agentData = (currentGroup?.members || currentConversation?.agents || currentConversation?.group?.members || [])
-                          .find(a => a.id === agent.id);
-                        if (agentData && !mentionedAgents.find(a => a.id === agent.id)) {
-                          if (mentionedAgents.length < 10) {
-                            setMentionedAgents([...mentionedAgents, agentData]);
-                          }
+                      const agentData = (currentGroup?.members || currentConversation?.agents || currentConversation?.group?.members || [])
+                        .find(a => a.id === agent.id);
+                      if (agentData && !mentionedAgents.find(a => a.id === agent.id)) {
+                        if (mentionedAgents.length < 10) {
+                          setMentionedAgents([...mentionedAgents, agentData]);
                         }
                       }
                     }}
@@ -1561,13 +1535,18 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                     id: group.id,
                     name: group.name,
                     icon: '👥',
-                    color: '#6366F1'
+                    type: 'group' as const,
+                    lastUsed: Date.now() - Math.floor(Math.random() * 86400000 * 7)  // Mock lastUsed within last 7 days
                   }))}
                   onSelectAgent={(agent) => {
-                    const isGroup = agentGroups.find(g => g.id === agent.id);
-                    if (isGroup && !selectedGroups.find(g => g.id === agent.id)) {
-                      setSelectedGroups([...selectedGroups, isGroup]);
-                    } else if (!isGroup) {
+                    // Check if it's a group
+                    const groupData = agentGroups.find(g => g.id === agent.id);
+                    if (groupData) {
+                      if (!selectedGroups.find(g => g.id === agent.id)) {
+                        setSelectedGroups([...selectedGroups, groupData]);
+                      }
+                    } else {
+                      // It's an agent
                       const agentData = allAgents.find(a => a.id === agent.id);
                       if (agentData && !mentionedAgents.find(a => a.id === agent.id)) {
                         setMentionedAgents([...mentionedAgents, agentData]);
