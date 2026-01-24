@@ -6,7 +6,14 @@ import './MentionEditor.css';
 
 // 自定义类型定义
 type ParagraphElement = { type: 'paragraph'; children: CustomText[] };
-type MentionElement = { type: 'mention'; character: string; agentId: string; agentIcon?: string; children: CustomText[] };
+type MentionElement = {
+  type: 'mention';
+  character: string;
+  agentId: string;
+  agentIcon?: string;
+  mentionType: 'agent' | 'skill';  // 区分智能体和技能
+  children: CustomText[]
+};
 type CustomElement = ParagraphElement | MentionElement;
 type CustomText = { text: string; bold?: boolean };
 
