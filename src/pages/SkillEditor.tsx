@@ -9,7 +9,9 @@ import {
   message,
   Modal,
   Tooltip,
-  Switch
+  Switch,
+  Tabs,
+  Dropdown
 } from 'antd';
 import {
   SendOutlined,
@@ -29,7 +31,13 @@ import {
   GlobalOutlined,
   FolderViewOutlined,
   EditOutlined,
-  BulbOutlined
+  BulbOutlined,
+  PlusOutlined,
+  EllipsisOutlined,
+  CopyOutlined,
+  EyeInvisibleOutlined,
+  DeleteOutlined,
+  SaveOutlined
 } from '@ant-design/icons';
 import type { DataNode } from 'antd/es/tree';
 import './SkillEditor.css';
@@ -49,6 +57,13 @@ interface FileNode {
   isLeaf?: boolean;
   children?: FileNode[];
   content?: string;
+}
+
+interface EnvVariable {
+  id: string;
+  key: string;
+  value: string;
+  visible: boolean;
 }
 
 interface SkillEditorProps {
@@ -823,6 +838,20 @@ Alina
   // Markdown编辑预览状态
   const [isMarkdownPreview, setIsMarkdownPreview] = useState(false);
 
+  // 标签页状态
+  const [activeTab, setActiveTab] = useState('preview');
+
+  // 环境变量状态
+  const [envEnvironment, setEnvEnvironment] = useState<'development' | 'production'>('development');
+  const [devEnvVars, setDevEnvVars] = useState<EnvVariable[]>([]);
+  const [prodEnvVars, setProdEnvVars] = useState<EnvVariable[]>([]);
+  const [isAddingEnvVar, setIsAddingEnvVar] = useState(false);
+  const [newEnvKey, setNewEnvKey] = useState('');
+  const [newEnvValue, setNewEnvValue] = useState('');
+  const [newEnvVisible, setNewEnvVisible] = useState(false);
+
+  // 移除导航页Modal状态，使用activeTab来控制
+
   // 处理拖动调整宽度
   React.useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -1083,6 +1112,68 @@ Alina
     });
     // 实时自动保存提示
     message.success({ content: '已自动保存', duration: 1, key: 'autosave' });
+  };
+
+  // 环境变量相关函数
+  const getCurrentEnvVars = () => {
+    return envEnvironment === 'development' ? devEnvVars : prodEnvVars;
+  };
+
+  const setCurrentEnvVars = (vars: EnvVariable[]) => {
+    if (envEnvironment === 'development') {
+      setDevEnvVars(vars);
+    } else {
+      setProdEnvVars(vars);
+    }
+  };
+
+  // 添加环境变量
+  const handleAddEnvVar = () => {
+    if (!newEnvKey.trim()) {
+      message.warning('请输入Key');
+      return;
+    }
+    if (!newEnvValue.trim()) {
+      message.warning('请输入Value');
+      return;
+    }
+
+    const newVar: EnvVariable = {
+      id: `env-${Date.now()}`,
+      key: newEnvKey.trim(),
+      value: newEnvValue.trim(),
+      visible: newEnvVisible
+    };
+
+    setCurrentEnvVars([...getCurrentEnvVars(), newVar]);
+    setIsAddingEnvVar(false);
+    setNewEnvKey('');
+    setNewEnvValue('');
+    setNewEnvVisible(false);
+    message.success('环境变量添加成功');
+  };
+
+  // 删除环境变量
+  const handleDeleteEnvVar = (id: string) => {
+    setCurrentEnvVars(getCurrentEnvVars().filter(v => v.id !== id));
+    message.success('环境变量已删除');
+  };
+
+  // 切换环境变量可见性
+  const handleToggleEnvVisible = (id: string) => {
+    setCurrentEnvVars(
+      getCurrentEnvVars().map(v =>
+        v.id === id ? { ...v, visible: !v.visible } : v
+      )
+    );
+  };
+
+  // 取消添加环境变量
+  const handleCancelAddEnvVar = () => {
+    setIsAddingEnvVar(false);
+    setNewEnvKey('');
+    setNewEnvValue('');
+    setNewEnvVisible(false);
   };
 
   // 部署
@@ -1353,6 +1444,15 @@ Alina
                 }}
               />
             </Tooltip>
+            <Tooltip title="环境变量">
+              <Button
+                icon={<GlobalOutlined />}
+                onClick={() => setActiveTab('env')}
+                style={{
+                  background: activeTab === 'env' ? '#f0f0f0' : 'transparent'
+                }}
+              />
+            </Tooltip>
             <Button
               icon={<CodeOutlined />}
               onClick={() => setShowTerminal(!showTerminal)}
@@ -1364,6 +1464,21 @@ Alina
             </Button>
             <Button
               type="primary"
+              icon={<SaveOutlined />}
+              onClick={() => {
+                message.success('保存成功');
+              }}
+              style={{
+                background: 'white',
+                color: '#6366F1',
+                border: '1px solid #ccc',
+                // border: 'none'
+              }}
+            >
+              保存
+            </Button>
+            <Button
+              type="primary"
               icon={<CloudUploadOutlined />}
               onClick={handleDeploy}
               style={{
@@ -1371,15 +1486,15 @@ Alina
                 border: 'none'
               }}
             >
-              部署
+              发布
             </Button>
           </Space>
         </div>
       </div>
 
       {/* 主体区域 */}
-      <Layout style={{ height: 'calc(100vh - 64px - 56px)', display: 'flex', flexDirection: 'row' }}>
-        {/* 左侧对话区域 */}
+      <Layout style={{ height: 'calc(100vh - 64px)', display: 'flex', flexDirection: 'row' }}>
+          {/* 预览页面的原有内容 */}
         <div style={{ position: 'relative', width: leftPanelWidth, background: '#fafafa', borderRight: '1px solid #e8e8e8', display: 'flex', flexShrink: 0 }}>
           <div style={{ height: '100%', display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
             {/* 对话头部 */}
@@ -1756,7 +1871,8 @@ Alina
             </div>
           )}
 
-          <div style={{ flex: 1, background: '#fff', display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+           {/* 编辑器内部页签区域 */}
+          <div className="editor-tabs-container" style={{ flex: 1, background: '#fff', display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
             {openFiles.length > 0 ? (
               <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
                 {/* 文件标签页 */}
@@ -1768,7 +1884,61 @@ Alina
                   alignItems: 'center'
                 }}>
                   <div style={{ display: 'flex', overflowX: 'auto', flex: 1 }}>
-                    {openFiles.map(file => (
+                    {/* 系统常驻标签 */}
+                    <div
+                      onClick={() => setActiveTab('preview')}
+                      style={{
+                        padding: '8px 16px',
+                        cursor: 'pointer',
+                        background: activeTab === 'preview' ? '#fff' : 'transparent',
+                        borderRight: '1px solid #e8e8e8',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        minWidth: '80px',
+                        fontWeight: activeTab === 'preview' ? 500 : 'normal'
+                      }}
+                    >
+                      <EyeOutlined style={{ fontSize: '12px', color: '#6366F1' }} />
+                      <span style={{ fontSize: '13px' }}>预览</span>
+                    </div>
+                    <div
+                      onClick={() => setActiveTab('env')}
+                      style={{
+                        padding: '8px 16px',
+                        cursor: 'pointer',
+                        background: activeTab === 'env' ? '#fff' : 'transparent',
+                        borderRight: '1px solid #e8e8e8',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        minWidth: '120px',
+                        fontWeight: activeTab === 'env' ? 500 : 'normal'
+                      }}
+                    >
+                      <GlobalOutlined style={{ fontSize: '12px', color: '#52c41a' }} />
+                      <span style={{ fontSize: '13px' }}>环境变量</span>
+                    </div>
+                    <div
+                      onClick={() => setActiveTab('navigator')}
+                      style={{
+                        padding: '8px 16px',
+                        cursor: 'pointer',
+                        background: activeTab === 'navigator' ? '#fff' : 'transparent',
+                        borderRight: '1px solid #e8e8e8',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        minWidth: '120px',
+                        fontWeight: activeTab === 'navigator' ? 500 : 'normal'
+                      }}
+                    >
+                      <PlusOutlined style={{ fontSize: '12px', color: '#8c8c8c' }} />
+                      {/* <span style={{ fontSize: '13px' }}>导航</span> */}
+                    </div>
+
+                    {/* 动态文件标签 - 仅在预览模式下显示 */}
+                    {activeTab === 'preview' && openFiles.filter(f => f.key !== 'preview').map(file => (
                       <div
                         key={file.key}
                         onClick={() => setActiveFileKey(file.key)}
@@ -1784,31 +1954,25 @@ Alina
                           position: 'relative'
                         }}
                       >
-                        {file.key === 'preview' ? (
-                          <EyeOutlined style={{ fontSize: '12px', color: '#6366F1' }} />
-                        ) : (
-                          <FileOutlined style={{ fontSize: '12px' }} />
-                        )}
+                        <FileOutlined style={{ fontSize: '12px' }} />
                         <span style={{ fontSize: '13px' }}>{file.title}</span>
-                        {openFiles.length > 1 && file.key !== 'preview' && (
-                          <CloseOutlined
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleCloseTab(file.key);
-                            }}
-                            style={{
-                              fontSize: '10px',
-                              color: '#999',
-                              marginLeft: 'auto'
-                            }}
-                          />
-                        )}
+                        <CloseOutlined
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleCloseTab(file.key);
+                          }}
+                          style={{
+                            fontSize: '10px',
+                            color: '#999',
+                            marginLeft: 'auto'
+                          }}
+                        />
                       </div>
                     ))}
                   </div>
 
-                  {/* 预览/编辑切换按钮 - 只在md文件时显示 */}
-                  {activeFileKey !== 'preview' && activeFileKey.endsWith('.md') && (
+                  {/* 预览/编辑切换按钮 - 只在预览模式且是md文件时显示 */}
+                  {activeTab === 'preview' && activeFileKey !== 'preview' && activeFileKey.endsWith('.md') && (
                     <div style={{
                       display: 'flex',
                       gap: '8px',
@@ -1845,9 +2009,469 @@ Alina
                   )}
                 </div>
 
-                {/* 代码编辑器 */}
+                {/* 内容区域 */}
                 <div style={{ flex: 1, overflow: 'auto', height: showTerminal ? 'calc(100% - 250px)' : '100%' }}>
-                  {activeFileKey === 'preview' ? (
+                  {activeTab === 'navigator' ? (
+                    /* 导航页 */
+                    <div style={{
+                      height: '100%',
+                      background: '#fafafa',
+                      overflow: 'auto',
+                      padding: '40px'
+                    }}>
+                      <div>
+                        {/* 开发工具部分 */}
+                        <div style={{ marginBottom: '48px' }}>
+                          <h2 style={{ fontSize: '24px', fontWeight: 600, marginBottom: '12px' }}>开发工具</h2>
+                          <div style={{ fontSize: '14px', color: '#8c8c8c', marginBottom: '24px' }}>
+                            提供代码编辑、实时预览与调试能力，支持全流程的开发与版本管理
+                          </div>
+
+                          <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(2, 1fr)',
+                            gap: '16px'
+                          }}>
+                            {/* 预览卡片 */}
+                            <div style={{
+                              padding: '12px',
+                              border: '1px solid #e8e8e8',
+                              borderRadius: '12px',
+                              background: '#fff',
+                              cursor: 'pointer',
+                              transition: 'all 0.3s'
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)'}
+                            onMouseLeave={(e) => e.currentTarget.style.boxShadow = 'none'}
+                            onClick={() => setActiveTab('preview')}
+                            >
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                <div>
+                                  <div style={{ fontSize: '20px', marginBottom: '12px' }}>📱</div>
+                                  <h3 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '8px' }}>预览</h3>
+                                  <p style={{ fontSize: '14px', color: '#8c8c8c', margin: 0 }}>
+                                    实时预览运行效果，并进行代码调试
+                                  </p>
+                                </div>
+                                <Button
+                                  type="text"
+                                  icon={<PlusOutlined />}
+                                  style={{
+                                    width: '32px',
+                                    height: '32px',
+                                    border: '1px solid #e8e8e8',
+                                    borderRadius: '50%'
+                                  }}
+                                />
+                              </div>
+                            </div>
+
+                            {/* 编辑器卡片 */}
+                            <div style={{
+                              padding: '12px',
+                              border: '1px solid #e8e8e8',
+                              borderRadius: '12px',
+                              background: '#fff',
+                              cursor: 'pointer',
+                              transition: 'all 0.3s'
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)'}
+                            onMouseLeave={(e) => e.currentTarget.style.boxShadow = 'none'}
+                            onClick={() => {
+                              setActiveTab('preview');
+                              setActiveFileKey('SKILL.md');
+                            }}
+                            >
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                <div>
+                                  <div style={{ fontSize: '20px', marginBottom: '12px' }}>📝</div>
+                                  <h3 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '8px' }}>编辑器</h3>
+                                  <p style={{ fontSize: '14px', color: '#8c8c8c', margin: 0 }}>
+                                    浏览、编写和修改项目的源代码文件
+                                  </p>
+                                </div>
+                                <Button
+                                  type="text"
+                                  icon={<PlusOutlined />}
+                                  style={{
+                                    width: '32px',
+                                    height: '32px',
+                                    border: '1px solid #e8e8e8',
+                                    borderRadius: '50%'
+                                  }}
+                                />
+                              </div>
+                            </div>
+
+                            {/* 终端卡片 */}
+                            <div style={{
+                              padding: '12px',
+                              border: '1px solid #e8e8e8',
+                              borderRadius: '12px',
+                              background: '#f5f5f5',
+                              cursor: 'pointer',
+                              transition: 'all 0.3s'
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)'}
+                            onMouseLeave={(e) => e.currentTarget.style.boxShadow = 'none'}
+                            onClick={() => setShowTerminal(true)}
+                            >
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                <div>
+                                  <div style={{ fontSize: '20px', marginBottom: '12px' }}>💻</div>
+                                  <h3 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '8px' }}>终端</h3>
+                                  <p style={{ fontSize: '14px', color: '#8c8c8c', margin: 0 }}>
+                                    访问系统命令行，执行脚本或安装依赖包
+                                  </p>
+                                </div>
+                                <Button
+                                  type="primary"
+                                  icon={<PlusOutlined />}
+                                  style={{
+                                    width: '32px',
+                                    height: '32px',
+                                    background: 'white',
+                                    color: '#000',
+                                    border: 'none',
+                                    borderRadius: '50%'
+                                  }}
+                                />
+                              </div>
+                            </div>
+
+                            {/* 版本控制卡片 */}
+                            <div style={{
+                              padding: '12px',
+                              border: '1px solid #e8e8e8',
+                              borderRadius: '12px',
+                              background: '#fff',
+                              cursor: 'pointer',
+                              transition: 'all 0.3s'
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)'}
+                            onMouseLeave={(e) => e.currentTarget.style.boxShadow = 'none'}
+                            >
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                <div>
+                                  <div style={{ fontSize: '20px', marginBottom: '12px' }}>🔄</div>
+                                  <h3 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '8px' }}>版本控制</h3>
+                                  <p style={{ fontSize: '14px', color: '#8c8c8c', margin: 0 }}>
+                                    管理代码版本，查看具体的代码变更差异和提交记录
+                                  </p>
+                                </div>
+                                <Button
+                                  type="text"
+                                  icon={<PlusOutlined />}
+                                  style={{
+                                    width: '32px',
+                                    height: '32px',
+                                    border: '1px solid #e8e8e8',
+                                    borderRadius: '50%'
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* 集成服务部分 */}
+                        <div style={{ marginBottom: '48px' }}>
+                          <h2 style={{ fontSize: '24px', fontWeight: 600, marginBottom: '12px' }}>集成服务</h2>
+                          <div style={{ fontSize: '14px', color: '#8c8c8c', marginBottom: '24px' }}>
+                            快速配置数据库、身份验证及存储等后端设施，为应用赋予底层能力
+                          </div>
+
+                          <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(2, 1fr)',
+                            gap: '16px'
+                          }}>
+                            {/* 环境变量卡片 */}
+                            <div style={{
+                              padding: '12px',
+                              border: '1px solid #e8e8e8',
+                              borderRadius: '12px',
+                              background: '#fff',
+                              cursor: 'pointer',
+                              transition: 'all 0.3s'
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)'}
+                            onMouseLeave={(e) => e.currentTarget.style.boxShadow = 'none'}
+                            onClick={() => setActiveTab('env')}
+                            >
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                <div>
+                                  <div style={{ fontSize: '20px', marginBottom: '12px' }}>🔐</div>
+                                  <h3 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '8px' }}>环境变量</h3>
+                                  <p style={{ fontSize: '14px', color: '#8c8c8c', margin: 0 }}>
+                                    安全存储 API Key 等配置信息
+                                  </p>
+                                </div>
+                                <Button
+                                  type="text"
+                                  icon={<PlusOutlined />}
+                                  style={{
+                                    width: '32px',
+                                    height: '32px',
+                                    border: '1px solid #e8e8e8',
+                                    borderRadius: '50%'
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* 部署运维部分 */}
+                        <div>
+                          <h2 style={{ fontSize: '24px', fontWeight: 600, marginBottom: '12px' }}>发布</h2>
+                          <div style={{ fontSize: '14px', color: '#8c8c8c', marginBottom: '24px' }}>
+                            一键将应用发布至生产环境，并提供实时的数据监控与日志排查服务
+                          </div>
+
+                          <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(2, 1fr)',
+                            gap: '16px'
+                          }}>
+                            {/* 部署卡片 */}
+                            <div style={{
+                              padding: '12px',
+                              border: '1px solid #e8e8e8',
+                              borderRadius: '12px',
+                              background: '#fff',
+                              cursor: 'pointer',
+                              transition: 'all 0.3s'
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)'}
+                            onMouseLeave={(e) => e.currentTarget.style.boxShadow = 'none'}
+                            onClick={() => handleDeploy()}
+                            >
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                <div>
+                                  <div style={{ fontSize: '20px', marginBottom: '12px' }}>🚀</div>
+                                  <h3 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '8px' }}>发布</h3>
+                                  <p style={{ fontSize: '14px', color: '#8c8c8c', margin: 0 }}>
+                                    项目一站式发布至技能中心
+                                  </p>
+                                </div>
+                                <Button
+                                  type="text"
+                                  icon={<PlusOutlined />}
+                                  style={{
+                                    width: '32px',
+                                    height: '32px',
+                                    border: '1px solid #e8e8e8',
+                                    borderRadius: '50%'
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : activeTab === 'env' ? (
+                    /* 环境变量页面 */
+                    <div className="env-variables-page" style={{
+                      height: '100%',
+                      background: '#fafafa',
+                      overflow: 'auto'
+                    }}>
+                      <div style={{
+                        maxWidth: '1200px',
+                        margin: '0 auto',
+                        padding: '40px 24px'
+                      }}>
+                        {/* 环境切换Tab */}
+                        <Tabs
+                          activeKey={envEnvironment}
+                          onChange={(key) => setEnvEnvironment(key as 'development' | 'production')}
+                          style={{ marginBottom: '32px' }}
+                          items={[
+                            {
+                              key: 'development',
+                              label: '开发环境'
+                            },
+                            {
+                              key: 'production',
+                              label: '生产环境'
+                            }
+                          ]}
+                        />
+
+                        {/* 环境变量列表 */}
+                        <div style={{
+                          background: '#fff',
+                          borderRadius: '8px',
+                          padding: '24px'
+                        }}>
+                          <h3 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '24px' }}>
+                            {envEnvironment === 'development' ? '开发环境变量' : '生产环境变量'}
+                          </h3>
+
+                          {/* 现有环境变量列表 */}
+                          {getCurrentEnvVars().map((envVar) => (
+                            <div key={envVar.id} style={{
+                              display: 'grid',
+                              gridTemplateColumns: '1fr 1fr auto',
+                              gap: '16px',
+                              marginBottom: '16px',
+                              padding: '16px',
+                              background: '#f5f5f5',
+                              borderRadius: '8px'
+                            }}>
+                              <div>
+                                <div style={{ fontSize: '12px', color: '#999', marginBottom: '8px' }}>Key</div>
+                                <Input
+                                  value={envVar.key}
+                                  disabled
+                                  style={{ background: '#fff' }}
+                                  suffix={
+                                    <Tooltip title="复制">
+                                      <CopyOutlined
+                                        style={{ color: '#999', cursor: 'pointer' }}
+                                        onClick={() => {
+                                          navigator.clipboard.writeText(envVar.key);
+                                          message.success('已复制');
+                                        }}
+                                      />
+                                    </Tooltip>
+                                  }
+                                />
+                              </div>
+                              <div>
+                                <div style={{ fontSize: '12px', color: '#999', marginBottom: '8px' }}>Value</div>
+                                <Input
+                                  value={envVar.visible ? envVar.value : '••••••••'}
+                                  disabled
+                                  style={{ background: '#fff' }}
+                                  suffix={
+                                    <Tooltip title={envVar.visible ? '隐藏' : '显示'}>
+                                      {envVar.visible ? (
+                                        <EyeOutlined
+                                          style={{ color: '#999', cursor: 'pointer' }}
+                                          onClick={() => handleToggleEnvVisible(envVar.id)}
+                                        />
+                                      ) : (
+                                        <EyeInvisibleOutlined
+                                          style={{ color: '#999', cursor: 'pointer' }}
+                                          onClick={() => handleToggleEnvVisible(envVar.id)}
+                                        />
+                                      )}
+                                    </Tooltip>
+                                  }
+                                />
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+                                <Dropdown
+                                  menu={{
+                                    items: [
+                                      {
+                                        key: 'delete',
+                                        label: '删除',
+                                        icon: <DeleteOutlined />,
+                                        danger: true,
+                                        onClick: () => handleDeleteEnvVar(envVar.id)
+                                      }
+                                    ]
+                                  }}
+                                  trigger={['click']}
+                                >
+                                  <Button icon={<EllipsisOutlined />} />
+                                </Dropdown>
+                              </div>
+                            </div>
+                          ))}
+
+                          {/* 添加新环境变量表单 */}
+                          {isAddingEnvVar && (
+                            <div style={{
+                              display: 'grid',
+                              gridTemplateColumns: '1fr 1fr auto',
+                              gap: '16px',
+                              marginBottom: '16px',
+                              padding: '16px',
+                              background: '#f5f5f5',
+                              borderRadius: '8px'
+                            }}>
+                              <div>
+                                <div style={{ fontSize: '12px', color: '#999', marginBottom: '8px' }}>Key</div>
+                                <Input
+                                  placeholder="请输入Key，最多63个字符"
+                                  value={newEnvKey}
+                                  onChange={(e) => setNewEnvKey(e.target.value)}
+                                  maxLength={63}
+                                  suffix={
+                                    <Tooltip title="复制">
+                                      <CopyOutlined style={{ color: '#d9d9d9' }} />
+                                    </Tooltip>
+                                  }
+                                />
+                              </div>
+                              <div>
+                                <div style={{ fontSize: '12px', color: '#999', marginBottom: '8px' }}>Value</div>
+                                <Input
+                                  placeholder="请输入Value"
+                                  value={newEnvValue}
+                                  onChange={(e) => setNewEnvValue(e.target.value)}
+                                  suffix={
+                                    <Tooltip title={newEnvVisible ? '隐藏' : '显示'}>
+                                      {newEnvVisible ? (
+                                        <EyeOutlined
+                                          style={{ color: '#999', cursor: 'pointer' }}
+                                          onClick={() => setNewEnvVisible(false)}
+                                        />
+                                      ) : (
+                                        <EyeInvisibleOutlined
+                                          style={{ color: '#999', cursor: 'pointer' }}
+                                          onClick={() => setNewEnvVisible(true)}
+                                        />
+                                      )}
+                                    </Tooltip>
+                                  }
+                                />
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+                                <Button icon={<EllipsisOutlined />} disabled />
+                              </div>
+                            </div>
+                          )}
+
+                          {/* 添加按钮区域 */}
+                          {isAddingEnvVar ? (
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '16px' }}>
+                              <Button onClick={handleCancelAddEnvVar}>取消</Button>
+                              <Button
+                                type="primary"
+                                onClick={handleAddEnvVar}
+                                style={{
+                                  background: '#000',
+                                  border: 'none'
+                                }}
+                              >
+                                确认
+                              </Button>
+                            </div>
+                          ) : (
+                            <Button
+                              type="default"
+                              icon={<PlusOutlined />}
+                              onClick={() => setIsAddingEnvVar(true)}
+                              style={{
+                                marginTop: '16px',
+                                background: '#8c8c8c',
+                                color: '#fff',
+                                border: 'none'
+                              }}
+                            >
+                              新建变量
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ) : activeTab === 'preview' && activeFileKey === 'preview' ? (
                     showPreviewChat ? (
                       // 预览CUI对话界面
                       <div style={{
@@ -2183,7 +2807,7 @@ Alina
                           ref={sandboxLogRef}
                           style={{
                             background: '#fefefe',
-                            padding: '24px',
+                            padding: '12px',
                             minHeight: '400px',
                             maxHeight: '500px',
                             overflowY: 'auto',
@@ -2285,7 +2909,7 @@ Alina
                       `}</style>
                     </div>
                     )
-                  ) : activeFileKey.endsWith('.md') && isMarkdownPreview ? (
+                  ) : activeTab === 'preview' && activeFileKey.endsWith('.md') && isMarkdownPreview ? (
                     // Markdown 预览模式
                     <div
                       style={{
@@ -2302,8 +2926,8 @@ Alina
                         __html: renderMarkdown(fileContents[activeFileKey] || '')
                       }}
                     />
-                  ) : (
-                    // 正常的代码编辑器
+                  ) : activeTab === 'preview' ? (
+                    // 正常的代码编辑器 - 仅在预览模式下
                     <TextArea
                       value={fileContents[activeFileKey] || ''}
                       onChange={(e) => handleContentChange(e.target.value)}
@@ -2318,7 +2942,7 @@ Alina
                         resize: 'none'
                       }}
                     />
-                  )}
+                  ) : null}
                 </div>
 
                 {/* 终端区域 */}
@@ -2410,11 +3034,11 @@ Alina
 
       {/* 部署确认对话框 */}
       <Modal
-        title="确认部署"
+        title="确认发布"
         open={showDeployConfirm}
         onOk={handleConfirmDeploy}
         onCancel={() => setShowDeployConfirm(false)}
-        okText="确认部署"
+        okText="确认发布"
         cancelText="取消"
         okButtonProps={{
           style: {
@@ -2423,8 +3047,8 @@ Alina
           }
         }}
       >
-        <p>确定要部署技能 <strong>{deployedSkillName}</strong> 吗？</p>
-        <p style={{ color: '#666', fontSize: '14px' }}>部署后，该技能将可以在前台使用。</p>
+        <p>确定要发布技能 <strong>{deployedSkillName}</strong> 吗？</p>
+        <p style={{ color: '#666', fontSize: '14px' }}>发布后，该技能将可以在智能体中配置</p>
       </Modal>
 
       {/* 部署成功对话框 */}

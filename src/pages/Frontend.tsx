@@ -9,7 +9,8 @@ import {
   TreeSelect,
   Avatar,
   Badge,
-  Spin
+  Spin,
+  message
 } from 'antd';
 import {
   PlusOutlined,
@@ -26,7 +27,12 @@ import {
   BulbOutlined,
   DatabaseOutlined,
   UserOutlined,
-  PaperClipOutlined
+  PaperClipOutlined,
+  EditOutlined,
+  PushpinOutlined,
+  DeleteOutlined,
+  EllipsisOutlined,
+  QuestionCircleOutlined
 } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
 import { SkillItem } from './Skill';
@@ -68,11 +74,12 @@ interface AgentGroup {
   name: string;
   members: Agent[];
   createTime: string;
+  pinned?: boolean;
 }
 
 interface Message {
   id: string;
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'clarification';
   content: string;
   agentId?: string;
   agentName?: string;
@@ -81,7 +88,9 @@ interface Message {
   thinking?: string;
   toolCalls?: ToolCall[];
   skillCalls?: string[];
-  status?: 'thinking' | 'calling' | 'completed';
+  status?: 'thinking' | 'calling' | 'completed' | 'waiting_clarification';
+  clarificationQuestion?: string;
+  clarificationOptions?: string[];
 }
 
 interface ToolCall {
@@ -130,11 +139,38 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [groupName, setGroupName] = useState('');
   const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
-  const [agentGroups, setAgentGroups] = useState<AgentGroup[]>([]);
+
+  // 初始化2个静态群组示例
+  const [agentGroups, setAgentGroups] = useState<AgentGroup[]>([
+    {
+      id: 'group-demo-1',
+      name: '行业分析团队',
+      members: [
+        { id: '1', name: '互联网行业洞察', icon: '🌐', color: '#6366F1', category: '行业分析' },
+        { id: '2', name: '石油行业知识问答小助手', icon: '📚', color: '#8B5CF6', category: '行业分析' },
+      ],
+      createTime: new Date(Date.now() - 86400000).toISOString(),
+      pinned: false,
+    },
+    {
+      id: 'group-demo-2',
+      name: '编程开发小组',
+      members: [
+        { id: '3', name: 'Python编程助手', icon: '🐍', color: '#3B82F6', category: '编程开发' },
+        { id: '4', name: 'JavaScript专家', icon: '💛', color: '#F59E0B', category: '编程开发' },
+        { id: '5', name: '数据分析师', icon: '📊', color: '#10B981', category: '数据分析' },
+      ],
+      createTime: new Date(Date.now() - 172800000).toISOString(),
+      pinned: false,
+    }
+  ]);
+
   const [showAllGroups, setShowAllGroups] = useState(false);
   const [currentGroup, setCurrentGroup] = useState<AgentGroup | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [mentionedAgents, setMentionedAgents] = useState<Agent[]>([]);
+  const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
+  const [editingGroupName, setEditingGroupName] = useState('');
 
   // 对话管理相关状态
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -142,6 +178,8 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
   const [showMentionPanel, setShowMentionPanel] = useState(false);
   const [mentionType, setMentionType] = useState<'agent' | 'group' | 'mixed'>('agent');
   const [selectedGroups, setSelectedGroups] = useState<AgentGroup[]>([]);
+  const [agentReplyQueue, setAgentReplyQueue] = useState<Agent[]>([]);
+  const [currentReplyingAgent, setCurrentReplyingAgent] = useState<Agent | null>(null);
 
   // 新建对话相关状态
   const [deepThinking, setDeepThinking] = useState(false);
@@ -209,65 +247,181 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
       name: groupName || `群组${agentGroups.length + 1}`,
       members,
       createTime: new Date().toISOString(),
+      pinned: false,
     };
 
     setAgentGroups([...agentGroups, newGroup]);
     setShowGroupModal(false);
     setGroupName('');
     setSelectedAgents([]);
+
+    // 新建完群组直接进入群组聊天
+    handleEnterGroup(newGroup);
+    message.success('群组创建成功');
   };
 
   // 进入群组对话
   const handleEnterGroup = (group: AgentGroup) => {
     setCurrentGroup(group);
+    setCurrentConversation(null);
     setMessages([]);
+    setAgentReplyQueue([]);
+    setCurrentReplyingAgent(null);
   };
 
-  // 模拟智能体回复
-  const simulateAgentReply = (agent: Agent, userMessage: string) => {
+  // 重命名群组
+  const handleRenameGroup = (groupId: string, newName: string) => {
+    if (!newName.trim()) {
+      message.warning('群组名称不能为空');
+      return;
+    }
+
+    setAgentGroups(prev => prev.map(g =>
+      g.id === groupId ? { ...g, name: newName.trim() } : g
+    ));
+
+    if (currentGroup?.id === groupId) {
+      setCurrentGroup(prev => prev ? { ...prev, name: newName.trim() } : null);
+    }
+
+    setEditingGroupId(null);
+    setEditingGroupName('');
+    message.success('群组名称已修改');
+  };
+
+  // 置顶/取消置顶群组
+  const handleTogglePinGroup = (groupId: string) => {
+    setAgentGroups(prev => {
+      const updated = prev.map(g =>
+        g.id === groupId ? { ...g, pinned: !g.pinned } : g
+      );
+      // 排序：置顶的在前
+      return updated.sort((a, b) => {
+        if (a.pinned && !b.pinned) return -1;
+        if (!a.pinned && b.pinned) return 1;
+        return 0;
+      });
+    });
+
+    const group = agentGroups.find(g => g.id === groupId);
+    message.success(group?.pinned ? '已取消置顶' : '已置顶');
+  };
+
+  // 删除群组
+  const handleDeleteGroup = (groupId: string) => {
+    Modal.confirm({
+      title: '确认删除',
+      content: '确定要删除这个群组吗？删除后无法恢复。',
+      okText: '确认',
+      cancelText: '取消',
+      okButtonProps: {
+        danger: true,
+      },
+      onOk: () => {
+        setAgentGroups(prev => prev.filter(g => g.id !== groupId));
+
+        if (currentGroup?.id === groupId) {
+          setCurrentGroup(null);
+          setMessages([]);
+        }
+
+        message.success('群组已删除');
+      },
+    });
+  };
+
+  // 模拟智能体回复（串行版本）
+  const simulateAgentReply = async (agent: Agent, userMessage: string, isLastInQueue: boolean = false) => {
     // Thinking阶段
     const thinkingMsg: Message = {
-      id: `msg-${Date.now()}-thinking`,
+      id: `msg-${Date.now()}-${agent.id}`,
       role: 'assistant',
       content: '',
       agentId: agent.id,
       agentName: agent.name,
       agentIcon: agent.icon,
       timestamp: new Date().toISOString(),
-      thinking: '正在分析问题...',
+      thinking: '正在深度思考问题...',
       status: 'thinking',
     };
     setMessages(prev => [...prev, thinkingMsg]);
 
-    // Tool调用阶段
-    setTimeout(() => {
+    // 等待1-2秒（模拟thinking时间）
+    await new Promise(resolve => setTimeout(resolve, 1500));
+
+    // 偶尔需要澄清（约20%概率）
+    const needsClarification = Math.random() < 0.2;
+
+    if (needsClarification) {
+      // 显示澄清请求
       setMessages(prev => prev.map(msg =>
         msg.id === thinkingMsg.id
           ? {
               ...msg,
-              status: 'calling',
-              toolCalls: [
-                { id: 'tool-1', name: 'web_search', status: 'running' },
-                { id: 'tool-2', name: 'read_file', status: 'running' }
+              status: 'waiting_clarification',
+              clarificationQuestion: '为了更好地回答您的问题，我需要确认一下：',
+              clarificationOptions: [
+                '您希望了解更详细的技术细节',
+                '您希望了解实际应用场景',
+                '您希望获得最佳实践建议'
               ]
             }
           : msg
       ));
-    }, 1000);
+
+      // 这里实际应该等待用户输入，现在模拟自动选择
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+
+    // Tool调用阶段
+    setMessages(prev => prev.map(msg =>
+      msg.id === thinkingMsg.id
+        ? {
+            ...msg,
+            status: 'calling',
+            thinking: '正在调用工具...',
+            toolCalls: [
+              { id: 'tool-1', name: 'web_search', status: 'running' },
+              { id: 'tool-2', name: 'read_file', status: 'running' }
+            ]
+          }
+        : msg
+    ));
+
+    // 等待2-3秒（模拟工具调用时间）
+    await new Promise(resolve => setTimeout(resolve, 2500));
 
     // 完成阶段
-    setTimeout(() => {
-      setMessages(prev => prev.map(msg =>
-        msg.id === thinkingMsg.id
-          ? {
-              ...msg,
-              status: 'completed',
-              content: `我是${agent.name}，针对您的问题"${userMessage}"，这是我的回答...`,
-              toolCalls: msg.toolCalls?.map(t => ({ ...t, status: 'completed' as const }))
-            }
-          : msg
-      ));
-    }, 3000);
+    setMessages(prev => prev.map(msg =>
+      msg.id === thinkingMsg.id
+        ? {
+            ...msg,
+            status: 'completed',
+            content: `我是${agent.name}。针对您的问题"${userMessage}"，经过深度思考和工具调用，我的回答是：\n\n这是一个详细的回答内容，包含了对问题的分析和建议。我已经考虑了多个方面，包括技术实现、最佳实践以及潜在的注意事项。`,
+            toolCalls: msg.toolCalls?.map(t => ({ ...t, status: 'completed' as const }))
+          }
+        : msg
+    ));
+  };
+
+  // 处理串行回复队列
+  const processAgentReplyQueue = async (agents: Agent[], userMessage: string) => {
+    setAgentReplyQueue(agents);
+
+    for (let i = 0; i < agents.length; i++) {
+      const agent = agents[i];
+      setCurrentReplyingAgent(agent);
+
+      await simulateAgentReply(agent, userMessage, i === agents.length - 1);
+
+      // 每个agent回复之间稍微间隔一下
+      if (i < agents.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+
+    setAgentReplyQueue([]);
+    setCurrentReplyingAgent(null);
   };
 
   // 发送消息
@@ -293,37 +447,35 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
           : conv
       ));
 
-      // 让被@的智能体回复
+      // 让被@的智能体串行回复
       const agentsToReply = mentionedAgents.length > 0
         ? mentionedAgents
         : currentConversation.agents || currentConversation.group?.members.slice(0, 1) || [];
 
+      // 使用串行回复处理
       agentsToReply.forEach((agent, index) => {
         setTimeout(() => {
           simulateAgentReplyInConversation(agent, inputValue, currentConversation.id);
-        }, index * 500);
+        }, index * 4500); // 每个agent串行，等待上一个完成
       });
     } else {
       setMessages(prev => [...prev, userMsg]);
 
-      // 让被@的智能体回复
+      // 让被@的智能体串行回复
       const agentsToReply = mentionedAgents.length > 0
         ? mentionedAgents
         : currentGroup?.members.slice(0, 1) || [];
 
-      agentsToReply.forEach((agent, index) => {
-        setTimeout(() => {
-          simulateAgentReply(agent, inputValue);
-        }, index * 500);
-      });
+      // 使用异步串行处理
+      processAgentReplyQueue(agentsToReply, inputValue);
     }
 
     setInputValue('');
     setMentionedAgents([]);
   };
 
-  // 在对话中模拟智能体回复
-  const simulateAgentReplyInConversation = (agent: Agent, userMessage: string, conversationId: string) => {
+  // 在对话中模拟智能体回复（异步串行版本）
+  const simulateAgentReplyInConversation = async (agent: Agent, userMessage: string, conversationId: string) => {
     // Thinking阶段
     const thinkingMsg: Message = {
       id: `msg-${Date.now()}-${agent.id}`,
@@ -333,7 +485,7 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
       agentName: agent.name,
       agentIcon: agent.icon,
       timestamp: new Date().toISOString(),
-      thinking: '正在分析问题...',
+      thinking: '正在深度思考问题...',
       status: 'thinking',
     };
 
@@ -344,77 +496,89 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
     ));
     setCurrentConversation(prev => prev ? { ...prev, messages: [...prev.messages, thinkingMsg] } : null);
 
-    // Tool调用阶段
-    setTimeout(() => {
+    // 等待1-2秒（模拟thinking时间）
+    await new Promise(resolve => setTimeout(resolve, 1500));
+
+    // 偶尔需要澄清（约20%概率）
+    const needsClarification = Math.random() < 0.2;
+
+    if (needsClarification) {
+      // 显示澄清请求
+      const updateWithClarification = (msg: Message) =>
+        msg.id === thinkingMsg.id
+          ? {
+              ...msg,
+              status: 'waiting_clarification' as const,
+              clarificationQuestion: '为了更好地回答您的问题，我需要确认一下：',
+              clarificationOptions: [
+                '您希望了解更详细的技术细节',
+                '您希望了解实际应用场景',
+                '您希望获得最佳实践建议'
+              ]
+            }
+          : msg;
+
       setConversations(prev => prev.map(conv =>
         conv.id === conversationId
-          ? {
-              ...conv,
-              messages: conv.messages.map(msg =>
-                msg.id === thinkingMsg.id
-                  ? {
-                      ...msg,
-                      status: 'calling' as const,
-                      toolCalls: [
-                        { id: 'tool-1', name: 'web_search', status: 'running' as const },
-                        { id: 'tool-2', name: 'read_file', status: 'running' as const }
-                      ]
-                    }
-                  : msg
-              )
-            }
+          ? { ...conv, messages: conv.messages.map(updateWithClarification) }
           : conv
       ));
       setCurrentConversation(prev => prev ? {
         ...prev,
-        messages: prev.messages.map(msg =>
-          msg.id === thinkingMsg.id
-            ? {
-                ...msg,
-                status: 'calling' as const,
-                toolCalls: [
-                  { id: 'tool-1', name: 'web_search', status: 'running' as const },
-                  { id: 'tool-2', name: 'read_file', status: 'running' as const }
-                ]
-              }
-            : msg
-        )
+        messages: prev.messages.map(updateWithClarification)
       } : null);
-    }, 1000);
+
+      // 这里实际应该等待用户输入，现在模拟自动选择
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+
+    // Tool调用阶段
+    const updateWithToolCalls = (msg: Message) =>
+      msg.id === thinkingMsg.id
+        ? {
+            ...msg,
+            status: 'calling' as const,
+            thinking: '正在调用工具...',
+            toolCalls: [
+              { id: 'tool-1', name: 'web_search', status: 'running' as const },
+              { id: 'tool-2', name: 'read_file', status: 'running' as const }
+            ]
+          }
+        : msg;
+
+    setConversations(prev => prev.map(conv =>
+      conv.id === conversationId
+        ? { ...conv, messages: conv.messages.map(updateWithToolCalls) }
+        : conv
+    ));
+    setCurrentConversation(prev => prev ? {
+      ...prev,
+      messages: prev.messages.map(updateWithToolCalls)
+    } : null);
+
+    // 等待2-3秒（模拟工具调用时间）
+    await new Promise(resolve => setTimeout(resolve, 2500));
 
     // 完成阶段
-    setTimeout(() => {
-      setConversations(prev => prev.map(conv =>
-        conv.id === conversationId
-          ? {
-              ...conv,
-              messages: conv.messages.map(msg =>
-                msg.id === thinkingMsg.id
-                  ? {
-                      ...msg,
-                      status: 'completed' as const,
-                      content: `我是${agent.name}，针对您的问题"${userMessage}"，这是我的回答...`,
-                      toolCalls: msg.toolCalls?.map(t => ({ ...t, status: 'completed' as const }))
-                    }
-                  : msg
-              )
-            }
-          : conv
-      ));
-      setCurrentConversation(prev => prev ? {
-        ...prev,
-        messages: prev.messages.map(msg =>
-          msg.id === thinkingMsg.id
-            ? {
-                ...msg,
-                status: 'completed' as const,
-                content: `我是${agent.name}，针对您的问题"${userMessage}"，这是我的回答...`,
-                toolCalls: msg.toolCalls?.map(t => ({ ...t, status: 'completed' as const }))
-              }
-            : msg
-        )
-      } : null);
-    }, 3000);
+    const updateWithCompletion = (msg: Message) =>
+      msg.id === thinkingMsg.id
+        ? {
+            ...msg,
+            status: 'completed' as const,
+            content: `我是${agent.name}。针对您的问题"${userMessage}"，经过深度思考和工具调用，我的回答是：\n\n这是一个详细的回答内容，包含了对问题的分析和建议。我已经考虑了多个方面，包括技术实现、最佳实践以及潜在的注意事项。`,
+            toolCalls: msg.toolCalls?.map(t => ({ ...t, status: 'completed' as const }))
+          }
+        : msg;
+
+    setConversations(prev => prev.map(conv =>
+      conv.id === conversationId
+        ? { ...conv, messages: conv.messages.map(updateWithCompletion) }
+        : conv
+    ));
+    setCurrentConversation(prev => prev ? {
+      ...prev,
+      messages: prev.messages.map(updateWithCompletion)
+    } : null);
   };
 
   // 创建新对话（从欢迎界面）
@@ -711,7 +875,6 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                   {agentGroups.slice(0, showAllGroups ? undefined : 5).map(group => (
                     <div
                       key={group.id}
-                      onClick={() => handleEnterGroup(group)}
                       style={{
                         padding: '10px',
                         marginBottom: '8px',
@@ -719,7 +882,8 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                         cursor: 'pointer',
                         border: currentGroup?.id === group.id ? '1px solid #6366F1' : '1px solid transparent',
                         background: currentGroup?.id === group.id ? '#F0F0FF' : 'transparent',
-                        transition: 'all 0.3s'
+                        transition: 'all 0.3s',
+                        position: 'relative'
                       }}
                       onMouseEnter={(e) => {
                         if (currentGroup?.id !== group.id) {
@@ -733,8 +897,63 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                       }}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                        {group.pinned && <PushpinOutlined style={{ color: '#6366F1', fontSize: '12px' }} />}
                         <TeamOutlined style={{ color: '#6366F1' }} />
-                        <span style={{ fontSize: '14px', fontWeight: 500 }}>{group.name}</span>
+                        {editingGroupId === group.id ? (
+                          <Input
+                            size="small"
+                            value={editingGroupName}
+                            onChange={(e) => setEditingGroupName(e.target.value)}
+                            onPressEnter={() => handleRenameGroup(group.id, editingGroupName)}
+                            onBlur={() => handleRenameGroup(group.id, editingGroupName)}
+                            autoFocus
+                            style={{ flex: 1, fontSize: '14px' }}
+                          />
+                        ) : (
+                          <span
+                            onClick={() => handleEnterGroup(group)}
+                            style={{ fontSize: '14px', fontWeight: 500, flex: 1 }}
+                          >
+                            {group.name}
+                          </span>
+                        )}
+                        <Dropdown
+                          menu={{
+                            items: [
+                              {
+                                key: 'rename',
+                                icon: <EditOutlined />,
+                                label: '重命名',
+                                onClick: () => {
+                                  setEditingGroupId(group.id);
+                                  setEditingGroupName(group.name);
+                                }
+                              },
+                              {
+                                key: 'pin',
+                                icon: <PushpinOutlined />,
+                                label: group.pinned ? '取消置顶' : '置顶',
+                                onClick: () => handleTogglePinGroup(group.id)
+                              },
+                              {
+                                type: 'divider'
+                              },
+                              {
+                                key: 'delete',
+                                icon: <DeleteOutlined />,
+                                label: '删除群组',
+                                danger: true,
+                                onClick: () => handleDeleteGroup(group.id)
+                              }
+                            ]
+                          }}
+                          trigger={['click']}
+                        >
+                          <EllipsisOutlined
+                            style={{ fontSize: '16px', color: '#999', cursor: 'pointer' }}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        </Dropdown>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
                         {group.members.slice(0, 3).map(member => (
@@ -868,6 +1087,9 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                         <div>
                           <div style={{ fontSize: '18px', fontWeight: 'bold' }}>
                             {currentGroup?.name || currentConversation?.group?.name}
+                            {currentGroup?.pinned && (
+                              <PushpinOutlined style={{ marginLeft: '8px', fontSize: '14px', color: '#6366F1' }} />
+                            )}
                           </div>
                           <div style={{ fontSize: '12px', color: '#999', marginTop: '4px' }}>
                             {(currentGroup?.members.length || currentConversation?.group?.members.length || 0)} 个成员
@@ -888,10 +1110,67 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                       </>
                     )}
                   </div>
-                  <Button onClick={() => {
-                    setCurrentConversation(null);
-                    setCurrentGroup(null);
-                  }}>退出对话</Button>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    {/* 群组操作菜单 */}
+                    {currentGroup && (
+                      <Dropdown
+                        menu={{
+                          items: [
+                            {
+                              key: 'rename',
+                              icon: <EditOutlined />,
+                              label: '重命名群组',
+                              onClick: () => {
+                                Modal.confirm({
+                                  title: '重命名群组',
+                                  content: (
+                                    <Input
+                                      placeholder="输入新的群组名称"
+                                      defaultValue={currentGroup.name}
+                                      id="rename-group-input"
+                                    />
+                                  ),
+                                  okText: '确认',
+                                  cancelText: '取消',
+                                  onOk: () => {
+                                    const input = document.getElementById('rename-group-input') as HTMLInputElement;
+                                    if (input?.value.trim()) {
+                                      handleRenameGroup(currentGroup.id, input.value);
+                                    }
+                                  }
+                                });
+                              }
+                            },
+                            {
+                              key: 'pin',
+                              icon: <PushpinOutlined />,
+                              label: currentGroup.pinned ? '取消置顶' : '置顶群组',
+                              onClick: () => handleTogglePinGroup(currentGroup.id)
+                            },
+                            {
+                              type: 'divider'
+                            },
+                            {
+                              key: 'delete',
+                              icon: <DeleteOutlined />,
+                              label: '删除群组',
+                              danger: true,
+                              onClick: () => handleDeleteGroup(currentGroup.id)
+                            }
+                          ]
+                        }}
+                        trigger={['click']}
+                      >
+                        <Button icon={<EllipsisOutlined />}>管理</Button>
+                      </Dropdown>
+                    )}
+                    <Button onClick={() => {
+                      setCurrentConversation(null);
+                      setCurrentGroup(null);
+                      setAgentReplyQueue([]);
+                      setCurrentReplyingAgent(null);
+                    }}>退出对话</Button>
+                  </div>
                 </div>
                 <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
                   {(currentGroup?.members || currentConversation?.agents || currentConversation?.group?.members || []).map(member => (
@@ -920,7 +1199,44 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                     <div style={{ fontSize: '12px', marginTop: '8px' }}>输入 @ 来提及智能体</div>
                   </div>
                 ) : (
-                  (currentConversation?.messages || messages).map(msg => (
+                  <>
+                    {/* 显示回复队列指示器 */}
+                    {agentReplyQueue.length > 0 && (
+                      <div style={{
+                        padding: '12px',
+                        background: '#F0F0FF',
+                        borderRadius: '8px',
+                        marginBottom: '16px',
+                        border: '1px solid #6366F1'
+                      }}>
+                        <div style={{ fontSize: '12px', color: '#666', marginBottom: '8px' }}>
+                          群组回复队列 ({agentReplyQueue.indexOf(currentReplyingAgent!) + 1}/{agentReplyQueue.length})
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                          {agentReplyQueue.map((agent, idx) => (
+                            <Tag
+                              key={agent.id}
+                              style={{
+                                padding: '4px 10px',
+                                borderRadius: '12px',
+                                background: currentReplyingAgent?.id === agent.id ? `${agent.color}` : `${agent.color}22`,
+                                border: `1px solid ${agent.color}`,
+                                color: currentReplyingAgent?.id === agent.id ? '#fff' : agent.color,
+                                fontSize: '12px'
+                              }}
+                            >
+                              <span style={{ marginRight: '4px' }}>{agent.icon}</span>
+                              {agent.name}
+                              {currentReplyingAgent?.id === agent.id && (
+                                <LoadingOutlined style={{ marginLeft: '6px' }} />
+                              )}
+                            </Tag>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {(currentConversation?.messages || messages).map(msg => (
                     <div key={msg.id} style={{ marginBottom: '24px' }}>
                       {msg.role === 'user' ? (
                         <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
@@ -959,6 +1275,50 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                               }}>
                                 <Spin indicator={<LoadingOutlined style={{ fontSize: 16 }} spin />} />
                                 <span style={{ fontStyle: 'italic' }}>{msg.thinking}</span>
+                              </div>
+                            )}
+
+                            {/* 等待澄清状态 */}
+                            {msg.status === 'waiting_clarification' && (
+                              <div style={{
+                                padding: '12px',
+                                background: '#FEF3C7',
+                                borderRadius: '8px',
+                                fontSize: '14px',
+                                marginTop: '8px',
+                                border: '1px solid #FCD34D'
+                              }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                                  <QuestionCircleOutlined style={{ color: '#F59E0B', fontSize: '16px' }} />
+                                  <span style={{ fontWeight: 500, color: '#92400E' }}>
+                                    {msg.clarificationQuestion}
+                                  </span>
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                  {msg.clarificationOptions?.map((option, idx) => (
+                                    <div
+                                      key={idx}
+                                      style={{
+                                        padding: '8px 12px',
+                                        background: '#fff',
+                                        borderRadius: '6px',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s',
+                                        border: '1px solid #E5E7EB'
+                                      }}
+                                      onMouseEnter={(e) => {
+                                        e.currentTarget.style.borderColor = '#F59E0B';
+                                        e.currentTarget.style.background = '#FFFBEB';
+                                      }}
+                                      onMouseLeave={(e) => {
+                                        e.currentTarget.style.borderColor = '#E5E7EB';
+                                        e.currentTarget.style.background = '#fff';
+                                      }}
+                                    >
+                                      {option}
+                                    </div>
+                                  ))}
+                                </div>
                               </div>
                             )}
 
@@ -1020,8 +1380,9 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                         </div>
                       )}
                     </div>
-                  ))
-                )}
+                  ))}
+                </>
+              )}
               </div>
 
               {/* 输入框区域 */}
@@ -1031,8 +1392,6 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                 boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
                 padding: '16px'
               }}>
-                {/* 移除已@的智能体标签展示 */}
-
                 <div style={{ position: 'relative' }}>
                   <MentionEditor
                     ref={conversationEditorRef}
@@ -1080,6 +1439,19 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                         const rect = e.currentTarget.getBoundingClientRect();
                         conversationEditorRef.current?.openMentionPanel(rect);
                       }}
+                    />
+                    {/* 群组对话时移除上传文件和深度思考按钮，保持界面一致 */}
+                    <Button
+                      type="default"
+                      size="small"
+                      icon={<PaperClipOutlined />}
+                      style={{ borderRadius: '6px' }}
+                    />
+                    <Button
+                      type="default"
+                      size="small"
+                      icon={<BulbOutlined />}
+                      style={{ borderRadius: '6px' }}
                     />
                   </div>
                   <Button
