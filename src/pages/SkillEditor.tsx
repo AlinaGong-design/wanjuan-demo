@@ -2736,7 +2736,7 @@ Alina
                                     style={{ color: '#666' }}
                                   />
                                 </Tooltip>
-                                <Tooltip title="智能建议">
+                                <Tooltip title="深度思考">
                                   <Button
                                     type="text"
                                     icon={<BulbOutlined />}

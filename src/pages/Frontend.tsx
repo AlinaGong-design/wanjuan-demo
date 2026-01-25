@@ -453,11 +453,7 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
         : currentConversation.agents || currentConversation.group?.members.slice(0, 1) || [];
 
       // 使用串行回复处理
-      agentsToReply.forEach((agent, index) => {
-        setTimeout(() => {
-          simulateAgentReplyInConversation(agent, inputValue, currentConversation.id);
-        }, index * 4500); // 每个agent串行，等待上一个完成
-      });
+      processAgentReplyQueueInConversation(agentsToReply, inputValue, currentConversation.id);
     } else {
       setMessages(prev => [...prev, userMsg]);
 
@@ -472,6 +468,20 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
 
     setInputValue('');
     setMentionedAgents([]);
+  };
+
+  // 处理对话中的串行回复队列
+  const processAgentReplyQueueInConversation = async (agents: Agent[], userMessage: string, conversationId: string) => {
+    for (let i = 0; i < agents.length; i++) {
+      const agent = agents[i];
+
+      await simulateAgentReplyInConversation(agent, userMessage, conversationId);
+
+      // 每个agent回复之间稍微间隔一下
+      if (i < agents.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
   };
 
   // 在对话中模拟智能体回复（异步串行版本）
