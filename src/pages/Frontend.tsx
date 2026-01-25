@@ -73,8 +73,26 @@ interface AgentGroup {
   id: string;
   name: string;
   members: Agent[];
+  coordinator?: Agent; // 主智能体（协调者）
   createTime: string;
   pinned?: boolean;
+}
+
+interface SubTask {
+  id: string;
+  taskName: string;
+  agentId: string;
+  agentName: string;
+  agentIcon?: string;
+  status: 'pending' | 'dispatched' | 'executing' | 'completed';
+  result?: string;
+  toolCalls?: ToolCall[];
+}
+
+interface CollaborationPlan {
+  id: string;
+  description: string;
+  subTasks: SubTask[];
 }
 
 interface Message {
@@ -88,9 +106,13 @@ interface Message {
   thinking?: string;
   toolCalls?: ToolCall[];
   skillCalls?: string[];
-  status?: 'thinking' | 'calling' | 'completed' | 'waiting_clarification';
+  status?: 'thinking' | 'calling' | 'completed' | 'waiting_clarification' | 'planning' | 'dispatching' | 'executing' | 'integrating';
   clarificationQuestion?: string;
   clarificationOptions?: string[];
+  // 多智能体协作相关
+  collaborationPlan?: CollaborationPlan;
+  subTaskResults?: SubTask[];
+  isCollaborationResult?: boolean;
 }
 
 interface ToolCall {
@@ -180,6 +202,7 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
   const [selectedGroups, setSelectedGroups] = useState<AgentGroup[]>([]);
   const [agentReplyQueue, setAgentReplyQueue] = useState<Agent[]>([]);
   const [currentReplyingAgent, setCurrentReplyingAgent] = useState<Agent | null>(null);
+  const [expandedCollaborations, setExpandedCollaborations] = useState<Set<string>>(new Set());
 
   // 新建对话相关状态
   const [deepThinking, setDeepThinking] = useState(false);
@@ -235,6 +258,27 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
     }));
   };
 
+  // 生成群组的主智能体（协调者）
+  const createCoordinatorAgent = (groupName: string, members: Agent[]): Agent => {
+    const coordinatorNames = [
+      '智能协调助手',
+      '任务调度器',
+      '协作管理员',
+      '项目协调员',
+      '团队指挥官'
+    ];
+
+    const name = coordinatorNames[Math.floor(Math.random() * coordinatorNames.length)];
+
+    return {
+      id: `coordinator-${Date.now()}`,
+      name: `${name} (${groupName})`,
+      icon: '🎯',
+      color: '#EC4899', // 粉红色，区别于其他智能体
+      category: '协调管理',
+    };
+  };
+
   // 创建群组
   const handleCreateGroup = () => {
     if (selectedAgents.length === 0) {
@@ -242,10 +286,13 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
     }
 
     const members = allAgents.filter(a => selectedAgents.includes(a.id));
+    const coordinator = createCoordinatorAgent(groupName || `群组${agentGroups.length + 1}`, members);
+
     const newGroup: AgentGroup = {
       id: `group-${Date.now()}`,
       name: groupName || `群组${agentGroups.length + 1}`,
       members,
+      coordinator,
       createTime: new Date().toISOString(),
       pinned: false,
     };
@@ -405,23 +452,337 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
   };
 
   // 处理串行回复队列
-  const processAgentReplyQueue = async (agents: Agent[], userMessage: string) => {
+  const processAgentReplyQueue = async (agents: Agent[], userMessage: string, coordinator?: Agent) => {
     setAgentReplyQueue(agents);
 
-    for (let i = 0; i < agents.length; i++) {
-      const agent = agents[i];
-      setCurrentReplyingAgent(agent);
-
-      await simulateAgentReply(agent, userMessage, i === agents.length - 1);
-
-      // 每个agent回复之间稍微间隔一下
-      if (i < agents.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 500));
+    // 如果有多个智能体，使用协作模式
+    if (agents.length > 1) {
+      // 使用提供的coordinator或从currentGroup获取
+      const mainAgent = coordinator || currentGroup?.coordinator;
+      if (mainAgent) {
+        await simulateCollaboration(agents, userMessage, mainAgent);
+      } else {
+        // 如果没有主智能体，使用第一个智能体作为协调者
+        await simulateCollaboration(agents, userMessage, agents[0]);
       }
+    } else {
+      // 单个智能体，使用原有逻辑
+      setCurrentReplyingAgent(agents[0]);
+      await simulateAgentReply(agents[0], userMessage, true);
     }
 
     setAgentReplyQueue([]);
     setCurrentReplyingAgent(null);
+  };
+
+  // 多智能体协作流程模拟（主群组页面）- 完整流程模式
+  const simulateCollaboration = async (agents: Agent[], userMessage: string, coordinator: Agent) => {
+    // 使用主智能体作为协调者
+
+    // 1. init_plan - 主智能体初始化计划
+    const initPlanMsg: Message = {
+      id: `msg-${Date.now()}-init-plan`,
+      role: 'assistant',
+      content: '',
+      agentId: coordinator.id,
+      agentName: coordinator.name,
+      agentIcon: coordinator.icon,
+      timestamp: new Date().toISOString(),
+      status: 'thinking',
+      thinking: '📋 正在初始化协作计划...',
+    };
+
+    setMessages(prev => [...prev, initPlanMsg]);
+    await new Promise(resolve => setTimeout(resolve, 1500));
+
+    const totalPlans = Math.min(agents.length, 3); // 最多3轮plan
+    setMessages(prev => prev.map(msg =>
+      msg.id === initPlanMsg.id
+        ? {
+            ...msg,
+            status: 'completed',
+            thinking: undefined,
+            content: `📋 **协作计划初始化完成**\n\n我是${coordinator.name}，将协调 ${agents.length} 个专业智能体完成任务。\n\n团队成员：\n${agents.map((a, i) => `${i + 1}. ${a.icon} ${a.name} - ${a.category}`).join('\n')}\n\n将执行 ${totalPlans} 轮协作计划。`,
+          }
+        : msg
+    ));
+
+    await new Promise(resolve => setTimeout(resolve, 800));
+
+    // 执行多轮plan
+    for (let planIndex = 0; planIndex < totalPlans; planIndex++) {
+      await executePlanRound(agents, userMessage, planIndex, totalPlans, coordinator);
+
+      // plan之间的间隔
+      if (planIndex < totalPlans - 1) {
+        await new Promise(resolve => setTimeout(resolve, 600));
+      }
+    }
+
+    await new Promise(resolve => setTimeout(resolve, 800));
+
+    // 最终summary - 由主智能体发出
+    const summaryMsg: Message = {
+      id: `msg-${Date.now()}-final-summary`,
+      role: 'assistant',
+      content: '',
+      agentId: coordinator.id,
+      agentName: coordinator.name,
+      agentIcon: coordinator.icon,
+      timestamp: new Date().toISOString(),
+      status: 'thinking',
+      thinking: '🎯 正在生成最终总结...',
+    };
+
+    setMessages(prev => [...prev, summaryMsg]);
+    await new Promise(resolve => setTimeout(resolve, 1800));
+
+    const finalSummary = `🎯 **最终协作总结**\n\n我是${coordinator.name}，经过 ${totalPlans} 轮协作计划的执行，团队完成了以下工作：\n\n${agents.map((agent, idx) =>
+      `**${idx + 1}. ${agent.icon} ${agent.name}**\n   ${generateAgentSummary(agent, userMessage)}`
+    ).join('\n\n')}\n\n✨ 所有任务已完成，我已完成协调工作。建议您根据以上分析采取行动。`;
+
+    setMessages(prev => prev.map(msg =>
+      msg.id === summaryMsg.id
+        ? {
+            ...msg,
+            status: 'completed',
+            thinking: undefined,
+            content: finalSummary,
+          }
+        : msg
+    ));
+  };
+
+  // 执行单轮plan
+  const executePlanRound = async (
+    agents: Agent[],
+    userMessage: string,
+    planIndex: number,
+    totalPlans: number,
+    thinker: Agent
+  ) => {
+    // 2. thinker - 思考阶段
+    const thinkerMsg: Message = {
+      id: `msg-${Date.now()}-thinker-${planIndex}`,
+      role: 'assistant',
+      content: '',
+      agentId: thinker.id,
+      agentName: thinker.name,
+      agentIcon: thinker.icon,
+      timestamp: new Date().toISOString(),
+      status: 'thinking',
+      thinking: `🤔 正在思考第 ${planIndex + 1}/${totalPlans} 轮计划...`,
+    };
+
+    setMessages(prev => [...prev, thinkerMsg]);
+    await new Promise(resolve => setTimeout(resolve, 1500));
+
+    // 确定这一轮需要哪些sub_agent
+    const subAgentsForThisRound = agents.slice(
+      planIndex % agents.length,
+      Math.min((planIndex % agents.length) + 2, agents.length)
+    );
+    if (subAgentsForThisRound.length === 0) {
+      subAgentsForThisRound.push(agents[planIndex % agents.length]);
+    }
+
+    // 生成更详细的思考内容
+    const thinkingDetails = [
+      `📌 **问题分析**：收到用户需求"${userMessage.substring(0, 30)}${userMessage.length > 30 ? '...' : ''}"`,
+      `🎯 **任务拆解**：本轮计划将任务分解为${subAgentsForThisRound.length}个并行子任务`,
+      `👥 **智能体分配**：`,
+      ...subAgentsForThisRound.map((agent, idx) =>
+        `   ${idx + 1}. @${agent.name} - 负责${agent.category}相关工作`
+      ),
+      ``,
+      `✅ 开始执行第 ${planIndex + 1}/${totalPlans} 轮协作！`
+    ];
+
+    const planContent = thinkingDetails.join('\n');
+
+    setMessages(prev => prev.map(msg =>
+      msg.id === thinkerMsg.id
+        ? {
+            ...msg,
+            status: 'completed',
+            thinking: undefined,
+            content: planContent,
+          }
+        : msg
+    ));
+
+    await new Promise(resolve => setTimeout(resolve, 800));
+
+    // 3 & 4. sub_agent 和 sub_agent_summary - 串行执行
+    for (let i = 0; i < subAgentsForThisRound.length; i++) {
+      const subAgent = subAgentsForThisRound[i];
+
+      // sub_agent 执行
+      await executeSubAgent(subAgent, userMessage, planIndex, i);
+
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // sub_agent_summary
+      await executeSubAgentSummary(subAgent, userMessage, planIndex, i);
+
+      // 子智能体之间的间隔
+      if (i < subAgentsForThisRound.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 600));
+      }
+    }
+
+    await new Promise(resolve => setTimeout(resolve, 800));
+
+    // 5. 当前plan执行完成检查
+    const planCompleteMsg: Message = {
+      id: `msg-${Date.now()}-plan-complete-${planIndex}`,
+      role: 'assistant',
+      content: '',
+      agentId: thinker.id,
+      agentName: thinker.name,
+      agentIcon: thinker.icon,
+      timestamp: new Date().toISOString(),
+      status: 'thinking',
+      thinking: '✅ 检查当前plan执行状态...',
+    };
+
+    setMessages(prev => [...prev, planCompleteMsg]);
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    setMessages(prev => prev.map(msg =>
+      msg.id === planCompleteMsg.id
+        ? {
+            ...msg,
+            status: 'completed',
+            thinking: undefined,
+            content: `✅ **第 ${planIndex + 1} 轮计划执行完成**\n\n已完成 ${subAgentsForThisRound.length} 个子任务。`,
+          }
+        : msg
+    ));
+
+    await new Promise(resolve => setTimeout(resolve, 600));
+
+    // 6. plan_status - 检查整体进度
+    const planStatusMsg: Message = {
+      id: `msg-${Date.now()}-plan-status-${planIndex}`,
+      role: 'assistant',
+      content: '',
+      agentId: thinker.id,
+      agentName: thinker.name,
+      agentIcon: thinker.icon,
+      timestamp: new Date().toISOString(),
+      status: 'thinking',
+      thinking: '📊 正在检查整体计划状态...',
+    };
+
+    setMessages(prev => [...prev, planStatusMsg]);
+    await new Promise(resolve => setTimeout(resolve, 1200));
+
+    const progress = Math.round(((planIndex + 1) / totalPlans) * 100);
+    const isAllComplete = planIndex === totalPlans - 1;
+
+    setMessages(prev => prev.map(msg =>
+      msg.id === planStatusMsg.id
+        ? {
+            ...msg,
+            status: 'completed',
+            thinking: undefined,
+            content: `📊 **整体进度：${progress}%**\n\n已完成 ${planIndex + 1}/${totalPlans} 轮计划\n${isAllComplete ? '✅ 所有计划已执行完成！' : '⏳ 继续执行下一轮...'}`,
+          }
+        : msg
+    ));
+  };
+
+  // 执行sub_agent
+  const executeSubAgent = async (
+    agent: Agent,
+    userMessage: string,
+    planIndex: number,
+    subIndex: number
+  ) => {
+    const subAgentMsg: Message = {
+      id: `msg-${Date.now()}-subagent-${planIndex}-${subIndex}`,
+      role: 'assistant',
+      content: '',
+      agentId: agent.id,
+      agentName: agent.name,
+      agentIcon: agent.icon,
+      timestamp: new Date().toISOString(),
+      status: 'thinking',
+      thinking: `🔧 正在执行子任务...`,
+    };
+
+    setMessages(prev => [...prev, subAgentMsg]);
+    await new Promise(resolve => setTimeout(resolve, 1200));
+
+    // Tool调用
+    const toolCalls: ToolCall[] = [
+      { id: `tool-${subAgentMsg.id}`, name: getRandomTool(agent.name), status: 'running' },
+    ];
+
+    setMessages(prev => prev.map(msg =>
+      msg.id === subAgentMsg.id
+        ? {
+            ...msg,
+            status: 'calling',
+            thinking: '🛠️ 调用工具中...',
+            toolCalls,
+          }
+        : msg
+    ));
+
+    await new Promise(resolve => setTimeout(resolve, 1500));
+
+    const result = generateSubTaskResult(agent, userMessage);
+    const completedToolCalls = toolCalls.map(t => ({ ...t, status: 'completed' as const }));
+
+    setMessages(prev => prev.map(msg =>
+      msg.id === subAgentMsg.id
+        ? {
+            ...msg,
+            status: 'completed',
+            thinking: undefined,
+            content: `🔧 **子任务执行结果**\n\n${result}`,
+            toolCalls: completedToolCalls,
+          }
+        : msg
+    ));
+  };
+
+  // 执行sub_agent_summary
+  const executeSubAgentSummary = async (
+    agent: Agent,
+    userMessage: string,
+    planIndex: number,
+    subIndex: number
+  ) => {
+    const summaryMsg: Message = {
+      id: `msg-${Date.now()}-subagent-summary-${planIndex}-${subIndex}`,
+      role: 'assistant',
+      content: '',
+      agentId: agent.id,
+      agentName: agent.name,
+      agentIcon: agent.icon,
+      timestamp: new Date().toISOString(),
+      status: 'thinking',
+      thinking: '📝 正在总结分析结果...',
+    };
+
+    setMessages(prev => [...prev, summaryMsg]);
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    const summary = `📝 **我的分析总结**\n\n${generateAgentSummary(agent, userMessage)}\n\n关键发现已记录，供后续决策参考。`;
+
+    setMessages(prev => prev.map(msg =>
+      msg.id === summaryMsg.id
+        ? {
+            ...msg,
+            status: 'completed',
+            thinking: undefined,
+            content: summary,
+          }
+        : msg
+    ));
   };
 
   // 发送消息
@@ -454,7 +815,8 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
 
       // 使用串行回复处理
       processAgentReplyQueueInConversation(agentsToReply, inputValue, currentConversation.id);
-    } else {
+    } else if (currentGroup) {
+      // 在群组中发送消息
       setMessages(prev => [...prev, userMsg]);
 
       // 让被@的智能体串行回复
@@ -464,24 +826,555 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
 
       // 使用异步串行处理
       processAgentReplyQueue(agentsToReply, inputValue);
+    } else {
+      // 新建对话场景：根据@的智能体和群组自动创建
+      const allMentionedAgents = [...mentionedAgents];
+
+      // 收集所有被@的群组中的智能体
+      selectedGroups.forEach(group => {
+        group.members.forEach(member => {
+          if (!allMentionedAgents.find(a => a.id === member.id)) {
+            allMentionedAgents.push(member);
+          }
+        });
+      });
+
+      if (allMentionedAgents.length === 0) {
+        message.warning('请先@智能体或群组');
+        return;
+      }
+
+      // 如果@了多个智能体或者@了群组，自动创建群组并进入群组聊天
+      if (allMentionedAgents.length > 1 || selectedGroups.length > 0) {
+        // 生成群组名称
+        const groupName = selectedGroups.length > 0
+          ? `${selectedGroups.map(g => g.name).join('+')}${mentionedAgents.length > 0 ? '+' + mentionedAgents.map(a => a.name).join('+') : ''}`
+          : allMentionedAgents.map(a => a.name).join('+');
+
+        const finalGroupName = groupName.length > 30 ? `协作群组${agentGroups.length + 1}` : groupName;
+
+        // 创建主智能体
+        const coordinator = createCoordinatorAgent(finalGroupName, allMentionedAgents);
+
+        // 创建新群组
+        const newGroup: AgentGroup = {
+          id: `group-${Date.now()}`,
+          name: finalGroupName,
+          members: allMentionedAgents,
+          coordinator,
+          createTime: new Date().toISOString(),
+          pinned: false,
+        };
+
+        // 添加到群组列表
+        setAgentGroups(prev => [...prev, newGroup]);
+
+        // 进入群组聊天
+        setCurrentGroup(newGroup);
+        setMessages([userMsg]);
+        setAgentReplyQueue([]);
+        setCurrentReplyingAgent(null);
+
+        // 启动协作流程（由主智能体协调）
+        processAgentReplyQueue(allMentionedAgents, inputValue, coordinator);
+
+        message.success(`已自动创建群组"${newGroup.name}"，主智能体"${coordinator.name}"已就位`);
+      } else {
+        // 只@了一个智能体，创建单聊对话
+        const agent = allMentionedAgents[0];
+        const newConversation: Conversation = {
+          id: `conv-${Date.now()}`,
+          title: `与${agent.name}的���话`,
+          type: 'agent',
+          agents: [agent],
+          messages: [userMsg],
+          createTime: new Date().toISOString(),
+        };
+
+        setConversations(prev => [...prev, newConversation]);
+        setCurrentConversation(newConversation);
+
+        // 让智能体回复
+        simulateAgentReplyInConversation(agent, inputValue, newConversation.id);
+
+        message.success(`已创建与${agent.name}的对话`);
+      }
     }
 
     setInputValue('');
     setMentionedAgents([]);
+    setSelectedGroups([]);
   };
 
   // 处理对话中的串行回复队列
   const processAgentReplyQueueInConversation = async (agents: Agent[], userMessage: string, conversationId: string) => {
-    for (let i = 0; i < agents.length; i++) {
-      const agent = agents[i];
+    // 如果有多个智能体，使用协作模式
+    if (agents.length > 1) {
+      await simulateCollaborationInConversation(agents, userMessage, conversationId);
+    } else {
+      // 单个智能体，使用原有逻辑
+      await simulateAgentReplyInConversation(agents[0], userMessage, conversationId);
+    }
+  };
 
-      await simulateAgentReplyInConversation(agent, userMessage, conversationId);
+  // 多智能体协作流程模拟 - 完整流程模式（对话场景）
+  const simulateCollaborationInConversation = async (agents: Agent[], userMessage: string, conversationId: string) => {
+    const thinker = agents[0];
 
-      // 每个agent回复之间稍微间隔一下
-      if (i < agents.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 500));
+    const updateConversation = (updater: (messages: Message[]) => Message[]) => {
+      setConversations(prev => prev.map(conv =>
+        conv.id === conversationId
+          ? { ...conv, messages: updater(conv.messages) }
+          : conv
+      ));
+      setCurrentConversation(prev => prev ? {
+        ...prev,
+        messages: updater(prev.messages)
+      } : null);
+    };
+
+    // 1. init_plan
+    const initPlanMsg: Message = {
+      id: `msg-${Date.now()}-init-plan`,
+      role: 'assistant',
+      content: '',
+      agentId: thinker.id,
+      agentName: thinker.name,
+      agentIcon: thinker.icon,
+      timestamp: new Date().toISOString(),
+      status: 'thinking',
+      thinking: '📋 正在初始化协作计划...',
+    };
+
+    updateConversation(msgs => [...msgs, initPlanMsg]);
+    await new Promise(resolve => setTimeout(resolve, 1500));
+
+    const totalPlans = Math.min(agents.length, 3);
+    updateConversation(msgs => msgs.map(msg =>
+      msg.id === initPlanMsg.id
+        ? {
+            ...msg,
+            status: 'completed',
+            thinking: undefined,
+            content: `📋 **协作计划初始化完成**\n\n将执行 ${totalPlans} 轮协作计划，每轮由不同智能体负责特定任务。`,
+          }
+        : msg
+    ));
+
+    await new Promise(resolve => setTimeout(resolve, 800));
+
+    // 执行多轮plan
+    for (let planIndex = 0; planIndex < totalPlans; planIndex++) {
+      await executePlanRoundInConversation(agents, userMessage, planIndex, totalPlans, thinker, conversationId);
+
+      if (planIndex < totalPlans - 1) {
+        await new Promise(resolve => setTimeout(resolve, 600));
       }
     }
+
+    await new Promise(resolve => setTimeout(resolve, 800));
+
+    // 最终summary
+    const summaryMsg: Message = {
+      id: `msg-${Date.now()}-final-summary`,
+      role: 'assistant',
+      content: '',
+      agentId: thinker.id,
+      agentName: thinker.name,
+      agentIcon: thinker.icon,
+      timestamp: new Date().toISOString(),
+      status: 'thinking',
+      thinking: '🎯 正在生成最终总结...',
+    };
+
+    updateConversation(msgs => [...msgs, summaryMsg]);
+    await new Promise(resolve => setTimeout(resolve, 1800));
+
+    const finalSummary = `🎯 **最终协作总结**\n\n经过 ${totalPlans} 轮协作计划的执行，团队完成了以下工作：\n\n${agents.map((agent, idx) =>
+      `**${idx + 1}. ${agent.name}**\n   ${generateAgentSummary(agent, userMessage)}`
+    ).join('\n\n')}\n\n✨ 所有任务已完成，建议您根据以上分析采取行动。`;
+
+    updateConversation(msgs => msgs.map(msg =>
+      msg.id === summaryMsg.id
+        ? {
+            ...msg,
+            status: 'completed',
+            thinking: undefined,
+            content: finalSummary,
+          }
+        : msg
+    ));
+  };
+
+  // 执行单轮plan（对话场景）
+  const executePlanRoundInConversation = async (
+    agents: Agent[],
+    userMessage: string,
+    planIndex: number,
+    totalPlans: number,
+    thinker: Agent,
+    conversationId: string
+  ) => {
+    const updateConversation = (updater: (messages: Message[]) => Message[]) => {
+      setConversations(prev => prev.map(conv =>
+        conv.id === conversationId
+          ? { ...conv, messages: updater(conv.messages) }
+          : conv
+      ));
+      setCurrentConversation(prev => prev ? {
+        ...prev,
+        messages: updater(prev.messages)
+      } : null);
+    };
+
+    // thinker
+    const thinkerMsg: Message = {
+      id: `msg-${Date.now()}-thinker-${planIndex}`,
+      role: 'assistant',
+      content: '',
+      agentId: thinker.id,
+      agentName: thinker.name,
+      agentIcon: thinker.icon,
+      timestamp: new Date().toISOString(),
+      status: 'thinking',
+      thinking: `🤔 正在思考第 ${planIndex + 1}/${totalPlans} 轮计划...`,
+    };
+
+    updateConversation(msgs => [...msgs, thinkerMsg]);
+    await new Promise(resolve => setTimeout(resolve, 1500));
+
+    const subAgentsForThisRound = agents.slice(
+      planIndex % agents.length,
+      Math.min((planIndex % agents.length) + 2, agents.length)
+    );
+    if (subAgentsForThisRound.length === 0) {
+      subAgentsForThisRound.push(agents[planIndex % agents.length]);
+    }
+
+    // 生成更详细的思考内容
+    const thinkingDetails = [
+      `📌 **问题分析**：收到用户需求"${userMessage.substring(0, 30)}${userMessage.length > 30 ? '...' : ''}"`,
+      `🎯 **任务拆解**：本轮计划将任务分解为${subAgentsForThisRound.length}个并行子任务`,
+      `👥 **智能体分配**：`,
+      ...subAgentsForThisRound.map((agent, idx) =>
+        `   ${idx + 1}. @${agent.name} - 负责${agent.category}相关工作`
+      ),
+      ``,
+      `✅ 开始执行第 ${planIndex + 1}/${totalPlans} 轮协作！`
+    ];
+
+    const planContent = thinkingDetails.join('\n');
+
+    updateConversation(msgs => msgs.map(msg =>
+      msg.id === thinkerMsg.id
+        ? {
+            ...msg,
+            status: 'completed',
+            thinking: undefined,
+            content: planContent,
+          }
+        : msg
+    ));
+
+    await new Promise(resolve => setTimeout(resolve, 800));
+
+    // sub_agent 和 sub_agent_summary
+    for (let i = 0; i < subAgentsForThisRound.length; i++) {
+      const subAgent = subAgentsForThisRound[i];
+
+      await executeSubAgentInConversation(subAgent, userMessage, planIndex, i, conversationId);
+      await new Promise(resolve => setTimeout(resolve, 500));
+      await executeSubAgentSummaryInConversation(subAgent, userMessage, planIndex, i, conversationId);
+
+      if (i < subAgentsForThisRound.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 600));
+      }
+    }
+
+    await new Promise(resolve => setTimeout(resolve, 800));
+
+    // plan完成检查
+    const planCompleteMsg: Message = {
+      id: `msg-${Date.now()}-plan-complete-${planIndex}`,
+      role: 'assistant',
+      content: '',
+      agentId: thinker.id,
+      agentName: thinker.name,
+      agentIcon: thinker.icon,
+      timestamp: new Date().toISOString(),
+      status: 'thinking',
+      thinking: '✅ 检查当前plan执行状态...',
+    };
+
+    updateConversation(msgs => [...msgs, planCompleteMsg]);
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    updateConversation(msgs => msgs.map(msg =>
+      msg.id === planCompleteMsg.id
+        ? {
+            ...msg,
+            status: 'completed',
+            thinking: undefined,
+            content: `✅ **第 ${planIndex + 1} 轮计划执行完成**\n\n已完成 ${subAgentsForThisRound.length} 个子任务。`,
+          }
+        : msg
+    ));
+
+    await new Promise(resolve => setTimeout(resolve, 600));
+
+    // plan_status
+    const planStatusMsg: Message = {
+      id: `msg-${Date.now()}-plan-status-${planIndex}`,
+      role: 'assistant',
+      content: '',
+      agentId: thinker.id,
+      agentName: thinker.name,
+      agentIcon: thinker.icon,
+      timestamp: new Date().toISOString(),
+      status: 'thinking',
+      thinking: '📊 正在检查整体计划状态...',
+    };
+
+    updateConversation(msgs => [...msgs, planStatusMsg]);
+    await new Promise(resolve => setTimeout(resolve, 1200));
+
+    const progress = Math.round(((planIndex + 1) / totalPlans) * 100);
+    const isAllComplete = planIndex === totalPlans - 1;
+
+    updateConversation(msgs => msgs.map(msg =>
+      msg.id === planStatusMsg.id
+        ? {
+            ...msg,
+            status: 'completed',
+            thinking: undefined,
+            content: `📊 **整体进度：${progress}%**\n\n已完成 ${planIndex + 1}/${totalPlans} 轮计划\n${isAllComplete ? '✅ 所有计划已执行完成！' : '⏳ 继续执行下一轮...'}`,
+          }
+        : msg
+    ));
+  };
+
+  // 执行sub_agent（对话场景）
+  const executeSubAgentInConversation = async (
+    agent: Agent,
+    userMessage: string,
+    planIndex: number,
+    subIndex: number,
+    conversationId: string
+  ) => {
+    const updateConversation = (updater: (messages: Message[]) => Message[]) => {
+      setConversations(prev => prev.map(conv =>
+        conv.id === conversationId
+          ? { ...conv, messages: updater(conv.messages) }
+          : conv
+      ));
+      setCurrentConversation(prev => prev ? {
+        ...prev,
+        messages: updater(prev.messages)
+      } : null);
+    };
+
+    const subAgentMsg: Message = {
+      id: `msg-${Date.now()}-subagent-${planIndex}-${subIndex}`,
+      role: 'assistant',
+      content: '',
+      agentId: agent.id,
+      agentName: agent.name,
+      agentIcon: agent.icon,
+      timestamp: new Date().toISOString(),
+      status: 'thinking',
+      thinking: `🔧 正在执行子任务...`,
+    };
+
+    updateConversation(msgs => [...msgs, subAgentMsg]);
+    await new Promise(resolve => setTimeout(resolve, 1200));
+
+    const toolCalls: ToolCall[] = [
+      { id: `tool-${subAgentMsg.id}`, name: getRandomTool(agent.name), status: 'running' },
+    ];
+
+    updateConversation(msgs => msgs.map(msg =>
+      msg.id === subAgentMsg.id
+        ? {
+            ...msg,
+            status: 'calling',
+            thinking: '🛠️ 调用工具中...',
+            toolCalls,
+          }
+        : msg
+    ));
+
+    await new Promise(resolve => setTimeout(resolve, 1500));
+
+    const result = generateSubTaskResult(agent, userMessage);
+    const completedToolCalls = toolCalls.map(t => ({ ...t, status: 'completed' as const }));
+
+    updateConversation(msgs => msgs.map(msg =>
+      msg.id === subAgentMsg.id
+        ? {
+            ...msg,
+            status: 'completed',
+            thinking: undefined,
+            content: `🔧 **子任务执行结果**\n\n${result}`,
+            toolCalls: completedToolCalls,
+          }
+        : msg
+    ));
+  };
+
+  // 执行sub_agent_summary（对话场景）
+  const executeSubAgentSummaryInConversation = async (
+    agent: Agent,
+    userMessage: string,
+    planIndex: number,
+    subIndex: number,
+    conversationId: string
+  ) => {
+    const updateConversation = (updater: (messages: Message[]) => Message[]) => {
+      setConversations(prev => prev.map(conv =>
+        conv.id === conversationId
+          ? { ...conv, messages: updater(conv.messages) }
+          : conv
+      ));
+      setCurrentConversation(prev => prev ? {
+        ...prev,
+        messages: updater(prev.messages)
+      } : null);
+    };
+
+    const summaryMsg: Message = {
+      id: `msg-${Date.now()}-subagent-summary-${planIndex}-${subIndex}`,
+      role: 'assistant',
+      content: '',
+      agentId: agent.id,
+      agentName: agent.name,
+      agentIcon: agent.icon,
+      timestamp: new Date().toISOString(),
+      status: 'thinking',
+      thinking: '📝 正在总结分析结果...',
+    };
+
+    updateConversation(msgs => [...msgs, summaryMsg]);
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    const summary = `📝 **我的分析总结**\n\n${generateAgentSummary(agent, userMessage)}\n\n关键发现已记录，供后续决策参考。`;
+
+    updateConversation(msgs => msgs.map(msg =>
+      msg.id === summaryMsg.id
+        ? {
+            ...msg,
+            status: 'completed',
+            thinking: undefined,
+            content: summary,
+          }
+        : msg
+    ));
+  };
+
+  // 生成子任务结果
+  const generateSubTaskResult = (agent: Agent, userMessage: string): string => {
+    const results: Record<string, string[]> = {
+      '数据分析师': [
+        '📊 数据分析结果：\n- Q3用户活跃度提升12%\n- 付费转化率达到8.5%\n- 用户平均停留时长增加至25分钟',
+        '📈 关键指标分析：\n- 新增用户量：15,234人（环比+18%）\n- 流失率降低至3.2%\n- 核心功能使用率提升至67%',
+        '🎯 数据洞察：\n- 主要增长来源：社交媒体推广\n- 高价值用户占比上升至23%\n- 周末活跃度明显高于工作日'
+      ],
+      '文案助手': [
+        '✍️ 文案方案A：\n「数据会说话！Q3成绩单来了📊 用户活跃度飙升12%，你还不来体验？限时福利等你拿！」',
+        '💡 创意文案B：\n「这个季度，我们一起创造了奇迹✨ 15,000+新伙伴加入，付费转化率破新高！感谢有你🙏」',
+        '🎨 营销建议：\n- 标题突出数据亮点\n- 配图使用对比图表\n- CTA设置限时优惠'
+      ],
+      'Python编程助手': [
+        '🐍 代码实现方案：\n```python\ndef analyze_user_data():\n    # 数据清洗\n    df = clean_data(raw_data)\n    # 统计分析\n    return df.groupby("date").agg(metrics)\n```',
+        '⚡ 性能优化建议：\n- 使用pandas进行批量处理\n- 采用异步IO提升效率\n- 缓存中间结果减少重复计算',
+        '🔧 技术方案：\n- 数据库：PostgreSQL\n- 分析工具：Pandas + NumPy\n- 可视化：Matplotlib'
+      ],
+      'JavaScript专家': [
+        '💛 前端实现方案：\n```js\nconst fetchData = async () => {\n  const res = await api.get("/analytics")\n  return processChartData(res.data)\n}\n```',
+        '🚀 性能优化：\n- 使用React.memo减少重渲染\n- 实现虚拟滚动提升列表性能\n- 代码分割降低首屏加载时间',
+        '🎯 用户体验优化：\n- 添加骨架屏加载\n- 实现数据实时更新\n- 优化移动端适配'
+      ],
+      '互联网行业洞察': [
+        '🌐 行业趋势分析：\n- AI驱动成为主流\n- 垂直领域深耕成趋势\n- 用户体验成核心竞争力',
+        '📱 市场机会：\n- 短视频+电商融合\n- 企业数字化转型加速\n- 下沉市场潜力巨大',
+        '💼 竞争格局：\n- 头部平台占据70%市场\n- 细分赛道涌现新玩家\n- 技术壁垒愈发重要'
+      ],
+      '石油行业知识问答小助手': [
+        '🛢️ 行业知识：\n- 原油价格受地缘政治影响大\n- 新能源转型加速行业变革\n- 炼化一体化成发展方向',
+        '📊 市场分析：\n- 国际油价震荡区间：70-90美元/桶\n- 国内成品油需求稳中有升\n- 天然气消费量持续增长',
+        '⚙️ 技术进展：\n- 页岩油开采技术成熟\n- 碳捕捉技术商业化探索\n- 智慧油田建设加速'
+      ],
+    };
+
+    const agentResults = results[agent.name] || [
+      `✅ 完成了${agent.category}领域的专业分析`,
+      `📋 针对"${userMessage}"提供了详细建议`,
+      `🎯 输出了可执行的行动方案`
+    ];
+
+    // 随机选择一个结果
+    return agentResults[Math.floor(Math.random() * agentResults.length)];
+  };
+
+  // 生成智能体总结
+  const generateAgentSummary = (agent: Agent, userMessage: string): string => {
+    const summaries: Record<string, string[]> = {
+      '数据分析师': [
+        '完成数据清洗与分析，识别出3个关键增长指标，为决策提供数据支撑',
+        '��过多维度数据对比，发现用户行为的核心规律，输出可视化报告',
+        '建立了数据监控看板，实现关键指标的实时追踪与预警'
+      ],
+      '文案助手': [
+        '撰写了3版营销文案，覆盖不同渠道和用户群体，预期转化率提升15%',
+        '优化了品牌传播话术，突出数据亮点，增强用户信任感',
+        '制定了内容营销日历，规划了未来30天的传播节奏'
+      ],
+      'Python编程助手': [
+        '实现了自动化数据处理脚本，将分析效率提升80%',
+        '搭建了数据分析pipeline，支持增量数据的实时处理',
+        '优化了算法性能，将计算时间从5分钟缩短至30秒'
+      ],
+      'JavaScript专家': [
+        '完成前端数据可视化组件，支持交互式图表展示',
+        '优化了页面加载性能，首屏渲染时间降低至1.2秒',
+        '实现了响应式设计，确保移动端用户体验'
+      ],
+      '互联网行业洞察': [
+        '分析了行业top10竞品策略，找到3个差异化机会点',
+        '预测了未来6个月的市场趋势，为产品规划提供方向',
+        '识别了2个高潜力细分市场，建议优先布局'
+      ],
+      '石油行业知识问答小助手': [
+        '提供了行业专业知识支持，解答了技术难点',
+        '分析了油价波动因素，给出了成本优化建议',
+        '梳理了行业政策变化，识别合规风险点'
+      ],
+    };
+
+    const agentSummaries = summaries[agent.name] || [
+      `完成了${agent.category}领域的深度分析`,
+      `为"${userMessage.substring(0, 20)}..."提供了专业建议`,
+      `输出了可落地的执行方案`
+    ];
+
+    return agentSummaries[Math.floor(Math.random() * agentSummaries.length)];
+  };
+
+  // 获取随机工具名称（智能体特定）
+  const getRandomTool = (agentName?: string): string => {
+    const toolsByAgent: Record<string, string[]> = {
+      '数据分析师': ['database_query', 'data_analysis', 'sql_execute', 'excel_processor'],
+      '文案助手': ['web_search', 'content_analyzer', 'trend_monitor', 'keyword_extractor'],
+      'Python编程助手': ['code_execution', 'pip_install', 'jupyter_notebook', 'pytest_runner'],
+      'JavaScript专家': ['npm_install', 'webpack_build', 'eslint_check', 'browser_test'],
+      '互联网行业洞察': ['web_search', 'news_aggregator', 'market_analyzer', 'competitor_tracker'],
+      '石油行业知识问答小助手': ['knowledge_base', 'industry_report', 'price_monitor', 'regulatory_check'],
+    };
+
+    const agentTools = agentName && toolsByAgent[agentName]
+      ? toolsByAgent[agentName]
+      : ['web_search', 'read_file', 'database_query', 'api_call', 'data_analysis', 'code_execution'];
+
+    return agentTools[Math.floor(Math.random() * agentTools.length)];
   };
 
   // 在对话中模拟智能体回复（异步串行版本）
@@ -1288,6 +2181,135 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                               </div>
                             )}
 
+                            {/* 协作计划状态 */}
+                            {(msg.status === 'planning' || msg.status === 'dispatching') && (
+                              <div style={{
+                                padding: '12px',
+                                background: '#EEF2FF',
+                                borderRadius: '8px',
+                                fontSize: '14px',
+                                color: '#666',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px'
+                              }}>
+                                <Spin indicator={<LoadingOutlined style={{ fontSize: 16 }} spin />} />
+                                <span style={{ fontStyle: 'italic' }}>{msg.thinking}</span>
+                              </div>
+                            )}
+
+                            {/* 显示协作计划 */}
+                            {msg.collaborationPlan && (
+                              <div style={{
+                                marginTop: '12px',
+                                padding: '16px',
+                                background: '#F9FAFB',
+                                borderRadius: '12px',
+                                border: '1px solid #E5E7EB'
+                              }}>
+                                <div style={{
+                                  fontSize: '14px',
+                                  fontWeight: 500,
+                                  marginBottom: '12px',
+                                  color: '#374151',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '8px'
+                                }}>
+                                  📋 协作计划
+                                </div>
+                                <div style={{ fontSize: '13px', color: '#6B7280', marginBottom: '12px' }}>
+                                  {msg.collaborationPlan.description}
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                  {msg.collaborationPlan.subTasks.map((task, idx) => (
+                                    <div key={task.id} style={{
+                                      padding: '10px 12px',
+                                      background: '#fff',
+                                      borderRadius: '8px',
+                                      border: '1px solid #E5E7EB',
+                                      fontSize: '13px'
+                                    }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                                        <span style={{ fontWeight: 500 }}>
+                                          子任务 {idx + 1}
+                                        </span>
+                                        <span>
+                                          {task.agentIcon} @{task.agentName}
+                                        </span>
+                                        {task.status === 'pending' && (
+                                          <Tag color="default" style={{ marginLeft: 'auto' }}>待派发</Tag>
+                                        )}
+                                        {task.status === 'dispatched' && (
+                                          <Tag color="blue" style={{ marginLeft: 'auto' }}>🚀 已派发</Tag>
+                                        )}
+                                        {task.status === 'executing' && (
+                                          <Tag color="orange" style={{ marginLeft: 'auto' }}>
+                                            <Spin size="small" style={{ marginRight: 4 }} />
+                                            执行中
+                                          </Tag>
+                                        )}
+                                        {task.status === 'completed' && (
+                                          <Tag color="success" style={{ marginLeft: 'auto' }}>✅ 已完成</Tag>
+                                        )}
+                                      </div>
+                                      {task.toolCalls && task.toolCalls.length > 0 && (
+                                        <div style={{ marginTop: '6px', fontSize: '12px', color: '#6B7280' }}>
+                                          🛠️ 调用工具: {task.toolCalls.map(t => t.name).join(', ')}
+                                        </div>
+                                      )}
+                                      {task.result && (
+                                        <div style={{
+                                          marginTop: '8px',
+                                          paddingTop: '8px',
+                                          borderTop: '1px solid #E5E7EB',
+                                          color: '#374151'
+                                        }}>
+                                          {task.result}
+                                        </div>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* 执行中状态 */}
+                            {msg.status === 'executing' && (
+                              <div style={{
+                                padding: '12px',
+                                background: '#FEF3C7',
+                                borderRadius: '8px',
+                                fontSize: '14px',
+                                color: '#92400E',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                marginTop: '8px'
+                              }}>
+                                <Spin indicator={<LoadingOutlined style={{ fontSize: 16, color: '#F59E0B' }} spin />} />
+                                <span style={{ fontStyle: 'italic' }}>{msg.thinking}</span>
+                              </div>
+                            )}
+
+                            {/* 整合中状态 */}
+                            {msg.status === 'integrating' && (
+                              <div style={{
+                                padding: '12px',
+                                background: '#DBEAFE',
+                                borderRadius: '8px',
+                                fontSize: '14px',
+                                color: '#1E40AF',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                marginTop: '8px'
+                              }}>
+                                <Spin indicator={<LoadingOutlined style={{ fontSize: 16, color: '#3B82F6' }} spin />} />
+                                <span style={{ fontStyle: 'italic' }}>{msg.thinking}</span>
+                              </div>
+                            )}
+
                             {/* 等待澄清状态 */}
                             {msg.status === 'waiting_clarification' && (
                               <div style={{
@@ -1360,14 +2382,93 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                             {msg.status === 'completed' && msg.content && (
                               <div style={{
                                 padding: '12px 16px',
-                                background: '#F9FAFB',
+                                background: msg.isCollaborationResult ? '#F0F9FF' : '#F9FAFB',
                                 borderRadius: '12px',
                                 fontSize: '14px',
                                 marginTop: '8px',
-                                border: '1px solid #E5E7EB'
+                                border: msg.isCollaborationResult ? '1px solid #BAE6FD' : '1px solid #E5E7EB'
                               }}>
-                                {msg.content}
-                                {msg.toolCalls && msg.toolCalls.length > 0 && (
+                                <div style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</div>
+
+                                {/* 协作结果展开按钮 */}
+                                {msg.isCollaborationResult && msg.subTaskResults && (
+                                  <div style={{ marginTop: '12px' }}>
+                                    <Button
+                                      type="link"
+                                      size="small"
+                                      onClick={() => {
+                                        const newExpanded = new Set(expandedCollaborations);
+                                        if (newExpanded.has(msg.id)) {
+                                          newExpanded.delete(msg.id);
+                                        } else {
+                                          newExpanded.add(msg.id);
+                                        }
+                                        setExpandedCollaborations(newExpanded);
+                                      }}
+                                      style={{ padding: 0, fontSize: '13px' }}
+                                    >
+                                      {expandedCollaborations.has(msg.id) ? '▼ 收起子任务详情' : '▶ 展开子任务详情'}
+                                    </Button>
+
+                                    {/* 展开的子任务详情 */}
+                                    {expandedCollaborations.has(msg.id) && (
+                                      <div style={{
+                                        marginTop: '12px',
+                                        paddingTop: '12px',
+                                        borderTop: '1px solid #BAE6FD'
+                                      }}>
+                                        {msg.subTaskResults.map((task, idx) => (
+                                          <div key={task.id} style={{
+                                            marginBottom: '12px',
+                                            padding: '12px',
+                                            background: '#fff',
+                                            borderRadius: '8px',
+                                            border: '1px solid #E5E7EB'
+                                          }}>
+                                            <div style={{
+                                              fontWeight: 500,
+                                              marginBottom: '8px',
+                                              color: '#374151',
+                                              display: 'flex',
+                                              alignItems: 'center',
+                                              gap: '8px'
+                                            }}>
+                                              <span>{task.agentIcon}</span>
+                                              <span>{task.agentName}</span>
+                                              <Tag color="success" style={{ marginLeft: 'auto' }}>已完成</Tag>
+                                            </div>
+                                            <div style={{ fontSize: '13px', color: '#6B7280', marginBottom: '8px' }}>
+                                              {task.taskName}
+                                            </div>
+                                            {task.toolCalls && task.toolCalls.length > 0 && (
+                                              <div style={{
+                                                fontSize: '12px',
+                                                color: '#9CA3AF',
+                                                marginBottom: '8px',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '6px'
+                                              }}>
+                                                <ToolOutlined />
+                                                <span>工具调用: {task.toolCalls.map(t => t.name).join(', ')}</span>
+                                              </div>
+                                            )}
+                                            <div style={{
+                                              paddingTop: '8px',
+                                              borderTop: '1px solid #F3F4F6',
+                                              color: '#374151',
+                                              fontSize: '13px'
+                                            }}>
+                                              {task.result}
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+
+                                {msg.toolCalls && msg.toolCalls.length > 0 && !msg.isCollaborationResult && (
                                   <div style={{
                                     marginTop: '12px',
                                     paddingTop: '12px',
