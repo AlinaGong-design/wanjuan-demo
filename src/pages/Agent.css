@@ -35,13 +35,24 @@
   background: transparent;
 }
 
-/* 左侧配置面板 */
+/* 配置面板 - 居中布局 */
 .agent-config-panel {
-  width: 480px;
+  width: 42%;
+  min-width: 480px;
+  max-width: 650px;
   background: #fff;
   border-right: 1px solid #e8e8e8;
   overflow-y: auto;
   padding: 24px;
+}
+
+.agent-config-panel-full {
+  width: 50%;
+  max-width: 900px;
+  min-width: 600px;
+  margin: 0 auto;
+  border-right: none;
+  border-left: none;
 }
 
 .config-section-title {
@@ -119,14 +130,27 @@
   gap: 12px;
 }
 
-/* 右侧预览面板 */
+/* 右侧预览/空白区域 */
 .agent-preview-panel {
   flex: 1;
   background: #fafafa;
   display: flex;
   flex-direction: column;
+  align-items: center;
+  justify-content: center;
   position: relative;
   overflow: hidden;
+}
+
+.agent-empty-preview {
+  text-align: center;
+  color: #bfbfbf;
+}
+
+.agent-empty-preview .anticon {
+  font-size: 80px;
+  margin-bottom: 16px;
+  opacity: 0.3;
 }
 
 .preview-header {
@@ -260,20 +284,29 @@
 }
 
 /* 响应式调整 */
+@media (max-width: 1400px) {
+  .agent-config-panel {
+    width: 45%;
+    min-width: 420px;
+  }
+}
+
 @media (max-width: 1200px) {
   .agent-config-panel {
-    width: 400px;
+    width: 50%;
+    min-width: 380px;
   }
 }
 
 @media (max-width: 992px) {
   .agent-config-panel {
-    width: 350px;
+    width: 100%;
+    min-width: auto;
+    border-right: none;
   }
 
-  .agent-preview-card {
-    min-width: 300px;
-    padding: 30px;
+  .agent-preview-panel {
+    display: none;
   }
 }
 

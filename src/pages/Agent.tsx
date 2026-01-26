@@ -9,7 +9,6 @@ import {
   Avatar,
   Space,
   Divider,
-  Badge,
   Drawer,
   Tag,
   Checkbox,
@@ -25,8 +24,6 @@ import {
   PlusOutlined,
   RightOutlined,
   QuestionCircleOutlined,
-  UploadOutlined,
-  SendOutlined,
   SearchOutlined
 } from '@ant-design/icons';
 import './Agent.css';
@@ -58,7 +55,6 @@ const Agent: React.FC = () => {
   const [isKnowledgeExpanded, setIsKnowledgeExpanded] = useState(false);
   const [isToolExpanded, setIsToolExpanded] = useState(false);
   const [isInteractionExpanded, setIsInteractionExpanded] = useState(false);
-  const [chatInput, setChatInput] = useState('');
 
   // Skills相关状态
   const [showSkillDrawer, setShowSkillDrawer] = useState(false);
@@ -109,7 +105,11 @@ const Agent: React.FC = () => {
       {/* 顶部栏 */}
       <div className="agent-editor-header">
         <div className="header-left">
-          <Button type="text" icon={<ArrowLeftOutlined />} />
+          <Button
+            type="text"
+            icon={<ArrowLeftOutlined />}
+            onClick={() => window.location.hash = 'agent'}
+          />
           <Avatar
             style={{
               background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
@@ -148,9 +148,9 @@ const Agent: React.FC = () => {
 
       {/* 主体内容区 */}
       <Layout className="agent-editor-content">
-        {/* 左侧配置区 */}
-        <div className="agent-config-panel">
-          <div className="config-section-title">智能体配置</div>
+        {/* 配置区 */}
+        <div className="agent-config-panel agent-config-panel-full">
+          <div className="config-section-title">Agent配置</div>
 
           {/* AI模型配置 */}
           <Collapse
@@ -320,92 +320,11 @@ const Agent: React.FC = () => {
             </div>
           </div>
         </div>
-
-        {/* 右侧预览区 */}
-        <div className="agent-preview-panel">
-          <div className="preview-header">
-            <span className="preview-title">调试预览</span>
-            <UploadOutlined style={{ fontSize: '16px', color: '#999', cursor: 'pointer' }} />
-          </div>
-
-          <div className="preview-content">
-            {/* 智能体卡片展示 */}
-            <div className="agent-preview-card">
-              <div className="agent-card-content">
-                <Avatar
-                  size={64}
-                  style={{
-                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                    fontSize: '24px'
-                  }}
-                >
-                  竞
-                </Avatar>
-                <div className="agent-card-title">竞品调研</div>
-                <div className="agent-card-meta">
-                  <span className="agent-card-author">作者：讯瞧</span>
-                </div>
-                <div className="agent-card-stats">
-                  <Badge count={11} style={{ backgroundColor: '#f0f0f0', color: '#666' }} />
-                </div>
-              </div>
-            </div>
-
-            {/* 聊天输入区 */}
-            <div className="preview-chat-input">
-              <Input
-                placeholder="有什么我可以帮助您的？"
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                suffix={
-                  <Button
-                    type="text"
-                    icon={<SendOutlined />}
-                    style={{ color: '#1890ff' }}
-                  />
-                }
-                style={{
-                  borderRadius: '20px',
-                  padding: '8px 16px'
-                }}
-              />
-            </div>
-
-            {/* 底部提示文字 */}
-            <div className="preview-footer-tips">
-              以上内容为AI生成，不代表开发者立场，请勿删除或修改文本标记
-            </div>
-          </div>
-
-          {/* 右侧浮动工具栏 */}
-          <div className="preview-floating-tools">
-            <div className="floating-tool-item">
-              <Badge dot>
-                <Avatar
-                  size={40}
-                  style={{ background: '#f0f0f0', cursor: 'pointer' }}
-                  icon={<SettingOutlined style={{ color: '#666' }} />}
-                />
-              </Badge>
-            </div>
-            <div className="floating-tool-item" style={{ marginTop: '12px' }}>
-              <Avatar
-                size={40}
-                style={{
-                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                  cursor: 'pointer'
-                }}
-              >
-                AI
-              </Avatar>
-            </div>
-          </div>
-        </div>
       </Layout>
 
       {/* Skills选择侧边栏 */}
       <Drawer
-        title="选择技能"
+        title="选择Skills"
         placement="right"
         width={480}
         open={showSkillDrawer}
@@ -415,7 +334,7 @@ const Agent: React.FC = () => {
         {/* 搜索框 */}
         <div style={{ marginBottom: '20px' }}>
           <Input
-            placeholder="搜索技能..."
+            placeholder="搜索Skills..."
             prefix={<SearchOutlined style={{ color: '#bfbfbf' }} />}
             value={skillSearchKeyword}
             onChange={(e) => setSkillSearchKeyword(e.target.value)}
