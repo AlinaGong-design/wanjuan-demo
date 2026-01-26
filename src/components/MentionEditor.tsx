@@ -3,6 +3,7 @@ import { createEditor, Descendant, Editor, Transforms, Range, Element as SlateEl
 import { Slate, Editable, withReact, ReactEditor, RenderElementProps, RenderLeafProps } from 'slate-react';
 import { withHistory } from 'slate-history';
 import './MentionEditor.css';
+import { Tag } from 'antd';
 
 // 自定义类型定义
 type ParagraphElement = { type: 'paragraph'; children: CustomText[] };
@@ -33,6 +34,8 @@ interface Agent {
   type?: 'agent' | 'skill' | 'group';
   category?: string;  // 添加类别字段
   lastUsed?: number;  // 添加最后使用时间
+  isMultiAgent?: boolean;  // 是否为多智能体模式
+  multiAgentMembers?: Agent[];  // 多智能体成员列表
 }
 
 interface MentionEditorProps {
@@ -298,11 +301,11 @@ const MentionEditor = forwardRef<MentionEditorHandle, MentionEditorProps>(({
                     flex: 1,
                     padding: '8px 16px',
                     textAlign: 'center',
-                    cursor: 'pointer',
                     borderBottom: activeTab === 'agents' ? '2px solid #6366F1' : '2px solid transparent',
+                    cursor: 'pointer',
                     color: activeTab === 'agents' ? '#6366F1' : '#666',
-                    fontWeight: activeTab === 'agents' ? 500 : 400,
                     transition: 'all 0.2s',
+                    fontWeight: activeTab === 'agents' ? 500 : 400,
                   }}
                 >
                   智能体
@@ -406,6 +409,7 @@ const MentionEditor = forwardRef<MentionEditorHandle, MentionEditorProps>(({
                           >
                             {agent.icon && <span style={{ fontSize: '16px' }}>{agent.icon}</span>}
                             <span>{agent.name}</span>
+                            {agent.isMultiAgent && <Tag color={'#6366F1'}> 多智能体 </Tag>}
                           </div>
                         );
                       })}

@@ -67,6 +67,8 @@ interface Agent {
   icon: string;
   color: string;
   category: string;
+  isMultiAgent?: boolean; // 是否为多智能体协作模式
+  multiAgentMembers?: Agent[]; // 多智能体成员
 }
 
 interface AgentGroup {
@@ -198,8 +200,8 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [currentConversation, setCurrentConversation] = useState<Conversation | null>(null);
   const [showMentionPanel, setShowMentionPanel] = useState(false);
-  const [mentionType, setMentionType] = useState<'agent' | 'group' | 'mixed'>('agent');
-  const [selectedGroups, setSelectedGroups] = useState<AgentGroup[]>([]);
+  // const [mentionType, setMentionType] = useState<'agent' | 'group' | 'mixed'>('agent');  // 已移除群组选择
+  // const [selectedGroups, setSelectedGroups] = useState<AgentGroup[]>([]);  // 已移除群组选择
   const [agentReplyQueue, setAgentReplyQueue] = useState<Agent[]>([]);
   const [currentReplyingAgent, setCurrentReplyingAgent] = useState<Agent | null>(null);
   const [expandedCollaborations, setExpandedCollaborations] = useState<Set<string>>(new Set());
@@ -209,22 +211,63 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
   const [selectedKnowledgeBase, setSelectedKnowledgeBase] = useState<string[]>([]);
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
 
+  // 智能体中心相关状态
+  const [showAgentCenter, setShowAgentCenter] = useState(false);
+  const [agentCenterCategory, setAgentCenterCategory] = useState('全部');
+  const [agentCenterSearch, setAgentCenterSearch] = useState('');
+  const [showManageDisplay, setShowManageDisplay] = useState(false);
+  const [pinnedAgentIds, setPinnedAgentIds] = useState<string[]>(['1', '3', '5', '4', '7']); // 默认固定5个智能体
+
   // 所有智能体数据（按类别分组）
   const allAgents: Agent[] = [
-    { id: '1', name: '互联网行业洞察', icon: '🌐', color: '#6366F1', category: '行业分析' },
-    { id: '2', name: '石油行业知识问答小助手', icon: '📚', color: '#8B5CF6', category: '行业分析' },
-    { id: '3', name: 'Python编程助手', icon: '🐍', color: '#3B82F6', category: '编程开发' },
-    { id: '4', name: 'JavaScript专家', icon: '💛', color: '#F59E0B', category: '编程开发' },
-    { id: '5', name: '数据分析师', icon: '📊', color: '#10B981', category: '数据分析' },
-    { id: '6', name: 'SQL优化专家', icon: '🗄️', color: '#06B6D4', category: '数据分析' },
-    { id: '7', name: '文案写作助手', icon: '✏️', color: '#EC4899', category: '内容创作' },
-    { id: '8', name: '翻译助手', icon: '🌍', color: '#8B5CF6', category: '内容创作' },
+    {
+      id: '1',
+      name: '互联网行业洞察',
+      icon: '🌐',
+      color: '#6366F1',
+      category: '行业分析',
+      isMultiAgent: true,
+      multiAgentMembers: [
+        { id: '1-1', name: '市场分析专家', icon: '📈', color: '#6366F1', category: '行业分析' },
+        { id: '1-2', name: '趋势预测专家', icon: '🔮', color: '#6366F1', category: '行业分析' },
+        { id: '1-3', name: '竞品分析师', icon: '🎯', color: '#6366F1', category: '行业分析' }
+      ]
+    },
+    { id: '2', name: '石油行业知识问答小助手', icon: '📚', color: '#8B5CF6', category: '行业分析', isMultiAgent: false },
+    {
+      id: '3',
+      name: 'Python编程助手',
+      icon: '🐍',
+      color: '#3B82F6',
+      category: '编程开发',
+      isMultiAgent: true,
+      multiAgentMembers: [
+        { id: '3-1', name: '代码审查专家', icon: '🔍', color: '#3B82F6', category: '编程开发' },
+        { id: '3-2', name: '调试专家', icon: '🐛', color: '#3B82F6', category: '编程开发' },
+        { id: '3-3', name: '性能优化师', icon: '⚡', color: '#3B82F6', category: '编程开发' }
+      ]
+    },
+    { id: '4', name: 'JavaScript专家', icon: '💛', color: '#F59E0B', category: '编程开发', isMultiAgent: false },
+    {
+      id: '5',
+      name: '数据分析师',
+      icon: '📊',
+      color: '#10B981',
+      category: '数据分析',
+      isMultiAgent: true,
+      multiAgentMembers: [
+        { id: '5-1', name: '数据清洗专家', icon: '🧹', color: '#10B981', category: '数据分析' },
+        { id: '5-2', name: '统计分析师', icon: '📐', color: '#10B981', category: '数据分析' },
+        { id: '5-3', name: '可视化专家', icon: '📊', color: '#10B981', category: '数据分析' }
+      ]
+    },
+    { id: '6', name: 'SQL优化专家', icon: '🗄️', color: '#06B6D4', category: '数据分析', isMultiAgent: false },
+    { id: '7', name: '文案写作助手', icon: '✏️', color: '#EC4899', category: '内容创作', isMultiAgent: false },
+    { id: '8', name: '翻译助手', icon: '🌍', color: '#8B5CF6', category: '内容创作', isMultiAgent: false },
   ];
 
-  const agents = [
-    { id: 1, icon: '🌐', name: '互联网行业洞察', color: '#6366F1' },
-    { id: 2, icon: '📚', name: '石油行业知识问答小助手', color: '#8B5CF6' },
-  ];
+  // 删除旧的agents数组，已改用allAgents
+  // const agents = [...]
 
   const mySkills: Skill[] = [
     { id: '1', name: '写作', icon: '✏️', color: '#F59E0B' },
@@ -453,10 +496,16 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
 
   // 处理串行回复队列
   const processAgentReplyQueue = async (agents: Agent[], userMessage: string, coordinator?: Agent) => {
+    console.log('=== processAgentReplyQueue 被调用 ===');
+    console.log('智能体数量:', agents.length);
+    console.log('智能体列表:', agents.map(a => a.name));
+    console.log('协调者:', coordinator?.name);
+
     setAgentReplyQueue(agents);
 
     // 如果有多个智能体，使用协作模式
     if (agents.length > 1) {
+      console.log('✅ 多智能体协作模式 - 调用simulateCollaboration');
       // 使用提供的coordinator或从currentGroup获取
       const mainAgent = coordinator || currentGroup?.coordinator;
       if (mainAgent) {
@@ -466,6 +515,7 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
         await simulateCollaboration(agents, userMessage, agents[0]);
       }
     } else {
+      console.log('❌ 单智能体模式 - 调用simulateAgentReply');
       // 单个智能体，使用原有逻辑
       setCurrentReplyingAgent(agents[0]);
       await simulateAgentReply(agents[0], userMessage, true);
@@ -477,6 +527,11 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
 
   // 多智能体协作流程模拟（主群组页面）- 完整流程模式
   const simulateCollaboration = async (agents: Agent[], userMessage: string, coordinator: Agent) => {
+    console.log('🎯 === simulateCollaboration 开始执行 ===');
+    console.log('协调者:', coordinator.name);
+    console.log('团队成员:', agents.map(a => a.name));
+    console.log('用户消息:', userMessage);
+
     // 使用主智能体作为协调者
 
     // 1. init_plan - 主智能体初始化计划
@@ -827,61 +882,53 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
       // 使用异步串行处理
       processAgentReplyQueue(agentsToReply, inputValue);
     } else {
-      // 新建对话场景：根据@的智能体和群组自动创建
+      // 新建对话场景：根据@的智能体自动创建
       const allMentionedAgents = [...mentionedAgents];
 
-      // 收集所有被@的群组中的智能体
-      selectedGroups.forEach(group => {
-        group.members.forEach(member => {
-          if (!allMentionedAgents.find(a => a.id === member.id)) {
-            allMentionedAgents.push(member);
-          }
-        });
-      });
-
       if (allMentionedAgents.length === 0) {
-        message.warning('请先@智能体或群组');
+        message.warning('请先@智能体');
         return;
       }
 
-      // 如果@了多个智能体或者@了群组，自动创建群组并进入群组聊天
-      if (allMentionedAgents.length > 1 || selectedGroups.length > 0) {
-        // 生成群组名称
-        const groupName = selectedGroups.length > 0
-          ? `${selectedGroups.map(g => g.name).join('+')}${mentionedAgents.length > 0 ? '+' + mentionedAgents.map(a => a.name).join('+') : ''}`
-          : allMentionedAgents.map(a => a.name).join('+');
+      const agent = allMentionedAgents[0];
 
-        const finalGroupName = groupName.length > 30 ? `协作群组${agentGroups.length + 1}` : groupName;
+      console.log('=== 发送消息 Debug Info ===');
+      console.log('选中的智能体:', agent.name);
+      console.log('isMultiAgent:', agent.isMultiAgent);
+      console.log('multiAgentMembers:', agent.multiAgentMembers);
+      console.log('multiAgentMembers长度:', agent.multiAgentMembers?.length);
 
-        // 创建主智能体
-        const coordinator = createCoordinatorAgent(finalGroupName, allMentionedAgents);
+      // 检查智能体是否有多智能体标签
+      if (agent.isMultiAgent && agent.multiAgentMembers && agent.multiAgentMembers.length > 0) {
+        console.log('✅ 触发多智能体协作模式');
+        // 多智能体协作模式，进入群组聊天
+        const groupName = agent.name;
+        const members = agent.multiAgentMembers;
 
-        // 创建新群组
+        const coordinator = createCoordinatorAgent(groupName, members);
+        console.log('创建的协调者:', coordinator);
+
         const newGroup: AgentGroup = {
           id: `group-${Date.now()}`,
-          name: finalGroupName,
-          members: allMentionedAgents,
+          name: groupName,
+          members: members,
           coordinator,
           createTime: new Date().toISOString(),
           pinned: false,
         };
 
-        // 添加到群组列表
         setAgentGroups(prev => [...prev, newGroup]);
-
-        // 进入群组聊天
         setCurrentGroup(newGroup);
         setMessages([userMsg]);
         setAgentReplyQueue([]);
         setCurrentReplyingAgent(null);
 
-        // 启动协作流程（由主智能体协调）
-        processAgentReplyQueue(allMentionedAgents, inputValue, coordinator);
+        processAgentReplyQueue(members, inputValue, coordinator);
 
-        message.success(`已自动创建群组"${newGroup.name}"，主智能体"${coordinator.name}"已就位`);
+        message.success(`已进入"${newGroup.name}"多智能体协作模式`);
       } else {
-        // 只@了一个智能体，创建单聊对话
-        const agent = allMentionedAgents[0];
+        console.log('❌ 普通单智能体模式');
+        // 普通单个智能体，创建单聊对话
         const newConversation: Conversation = {
           id: `conv-${Date.now()}`,
           title: `与${agent.name}的���话`,
@@ -894,7 +941,6 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
         setConversations(prev => [...prev, newConversation]);
         setCurrentConversation(newConversation);
 
-        // 让智能体回复
         simulateAgentReplyInConversation(agent, inputValue, newConversation.id);
 
         message.success(`已创建与${agent.name}的对话`);
@@ -903,7 +949,7 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
 
     setInputValue('');
     setMentionedAgents([]);
-    setSelectedGroups([]);
+    // setSelectedGroups([]);  // 已移除群组选择功能
   };
 
   // 处理对话中的串行回复队列
@@ -1486,73 +1532,109 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
 
   // 创建新对话（从欢迎界面）
   const handleCreateConversation = () => {
+    console.log('🎬 handleCreateConversation 被调用');
+    console.log('mentionedAgents:', mentionedAgents);
+
     if (!inputValue.trim()) return;
 
-    // 确定对话类型和参与者
-    let conversationType: 'agent' | 'group' | 'mixed' = 'mixed';
-    let conversationAgents: Agent[] = [];
-    let conversationGroup: AgentGroup | undefined = undefined;
-
-    if (selectedGroups.length > 0 && mentionedAgents.length === 0) {
-      // 只有群组
-      conversationType = 'group';
-      conversationGroup = selectedGroups[0];
-      conversationAgents = selectedGroups.flatMap(g => g.members);
-    } else if (selectedGroups.length === 0 && mentionedAgents.length > 0) {
-      // 只有智能体
-      conversationType = 'agent';
-      conversationAgents = mentionedAgents;
-    } else if (selectedGroups.length > 0 && mentionedAgents.length > 0) {
-      // 混合
-      conversationType = 'mixed';
-      conversationAgents = [...mentionedAgents, ...selectedGroups.flatMap(g => g.members)];
-      // 去重
-      conversationAgents = conversationAgents.filter((agent, index, self) =>
-        index === self.findIndex(a => a.id === agent.id)
-      );
+    // 检查是否选择了智能体
+    if (mentionedAgents.length === 0) {
+      message.warning('请先@智能体');
+      return;
     }
 
-    const newConversation: Conversation = {
-      id: `conv-${Date.now()}`,
-      title: inputValue.slice(0, 30) + (inputValue.length > 30 ? '...' : ''),
-      type: conversationType,
-      agents: conversationAgents,
-      group: conversationGroup,
-      messages: [],
-      createTime: new Date().toISOString(),
-      deepThinking,
-      knowledgeBase: selectedKnowledgeBase,
-      uploadedFiles
-    };
+    const agent = mentionedAgents[0]; // 单选模式，只有一个智能体
+    console.log('选中的智能体:', agent);
+    console.log('isMultiAgent:', agent.isMultiAgent);
 
-    setConversations(prev => [newConversation, ...prev]);
-    setCurrentConversation(newConversation);
+    // 检查是否为多智能体模式
+    if (agent.isMultiAgent && agent.multiAgentMembers && agent.multiAgentMembers.length > 0) {
+      console.log('✅ 多智能体模式 - 创建群组聊天');
 
-    // 发送第一条消息
-    const userMsg: Message = {
-      id: `msg-${Date.now()}`,
-      role: 'user',
-      content: inputValue,
-      timestamp: new Date().toISOString(),
-    };
+      // 多智能体协作模式，创建群组
+      const groupName = agent.name;
+      const members = agent.multiAgentMembers;
 
-    newConversation.messages.push(userMsg);
-    setConversations(prev => prev.map(conv =>
-      conv.id === newConversation.id ? newConversation : conv
-    ));
+      // 创建协调者
+      const coordinator = createCoordinatorAgent(groupName, members);
+      console.log('创建的协调者:', coordinator);
 
-    // 让被@的智能体回复
-    const agentsToReply = conversationAgents.slice(0, 10);
-    agentsToReply.forEach((agent, index) => {
-      setTimeout(() => {
-        simulateAgentReplyInConversation(agent, inputValue, newConversation.id);
-      }, index * 500);
-    });
+      // 创建用户消息
+      const userMsg: Message = {
+        id: `msg-${Date.now()}`,
+        role: 'user',
+        content: inputValue,
+        timestamp: new Date().toISOString(),
+      };
+
+      // 创建群组
+      const newGroup: AgentGroup = {
+        id: `group-${Date.now()}`,
+        name: groupName,
+        members: members,
+        coordinator,
+        createTime: new Date().toISOString(),
+        pinned: false,
+      };
+
+      setAgentGroups(prev => [...prev, newGroup]);
+      setCurrentGroup(newGroup);
+      setCurrentConversation(null); // 清空当前对话
+      setMessages([userMsg]);
+      setAgentReplyQueue([]);
+      setCurrentReplyingAgent(null);
+
+      // 启动多智能体协作流程
+      processAgentReplyQueue(members, inputValue, coordinator);
+
+      message.success(`已进入"${newGroup.name}"多智能体协作模式`);
+    } else {
+      console.log('❌ 普通智能体模式 - 创建单聊对话');
+
+      // 普通单智能体，创建对话
+      const conversationAgents = mentionedAgents;
+
+      const newConversation: Conversation = {
+        id: `conv-${Date.now()}`,
+        title: inputValue.slice(0, 30) + (inputValue.length > 30 ? '...' : ''),
+        type: 'agent',
+        agents: conversationAgents,
+        group: undefined,
+        messages: [],
+        createTime: new Date().toISOString(),
+        deepThinking,
+        knowledgeBase: selectedKnowledgeBase,
+        uploadedFiles
+      };
+
+      setConversations(prev => [newConversation, ...prev]);
+      setCurrentConversation(newConversation);
+
+      // 发送第一条消息
+      const userMsg: Message = {
+        id: `msg-${Date.now()}`,
+        role: 'user',
+        content: inputValue,
+        timestamp: new Date().toISOString(),
+      };
+
+      newConversation.messages.push(userMsg);
+      setConversations(prev => prev.map(conv =>
+        conv.id === newConversation.id ? newConversation : conv
+      ));
+
+      // 让被@的智能体回复
+      const agentsToReply = conversationAgents.slice(0, 10);
+      agentsToReply.forEach((agent, index) => {
+        setTimeout(() => {
+          simulateAgentReplyInConversation(agent, inputValue, newConversation.id);
+        }, index * 500);
+      });
+    }
 
     // 重置状态
     setInputValue('');
     setMentionedAgents([]);
-    setSelectedGroups([]);
     setDeepThinking(false);
     setSelectedKnowledgeBase([]);
     setUploadedFiles([]);
@@ -1564,7 +1646,7 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
     setCurrentGroup(null);
     setMessages([]);
     setMentionedAgents([]);
-    setSelectedGroups([]);
+    // setSelectedGroups([]);  // 已移除群组选择功能
     setInputValue('');
   };
 
@@ -1582,20 +1664,18 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
     }
   };
 
-  // 选择群组
-  const handleSelectGroup = (group: AgentGroup) => {
-    if (!selectedGroups.find(g => g.id === group.id)) {
-      setSelectedGroups([...selectedGroups, group]);
-    }
-    setShowMentionPanel(false);
-  };
+  // 选择群组 - 已废弃，群组选择功能已移除
+  // const handleSelectGroup = (group: AgentGroup) => {
+  //   if (!selectedGroups.find(g => g.id === group.id)) {
+  //     setSelectedGroups([...selectedGroups, group]);
+  //   }
+  //   setShowMentionPanel(false);
+  // };
 
-  // 选择智能体（新建对话）
+  // 选择智能体（新建对话）- 改为单选模式
   const handleSelectAgent = (agent: Agent) => {
-    if (mentionedAgents.length >= 10) return;
-    if (!mentionedAgents.find(a => a.id === agent.id)) {
-      setMentionedAgents([...mentionedAgents, agent]);
-    }
+    // 单选模式，清空之前的选择，只保留当前选中的智能体
+    setMentionedAgents([agent]);
     setShowMentionPanel(false);
   };
 
@@ -1705,7 +1785,7 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
               >
                 新建对话
               </Button>
-
+{/* 
               <Button
                 type="default"
                 icon={<TeamOutlined />}
@@ -1719,11 +1799,11 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                 onClick={() => setShowGroupModal(true)}
               >
                 新建群组
-              </Button>
+              </Button> */}
 
               <div style={{ marginBottom: '24px' }}>
                 <div style={{ fontSize: '12px', color: '#999', marginBottom: '12px' }}>智能体中心</div>
-                {agents.map(agent => (
+                {allAgents.filter(agent => pinnedAgentIds.includes(agent.id)).map(agent => (
                   <div
                     key={agent.id}
                     style={{
@@ -1741,6 +1821,7 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                   >
                     <span style={{ fontSize: '20px' }}>{agent.icon}</span>
                     <span style={{ fontSize: '14px' }}>{agent.name}</span>
+                    {agent.isMultiAgent && <Tag color={'#6366F1'}> 多智能体 </Tag>}
                   </div>
                 ))}
                 <div
@@ -1752,6 +1833,9 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                     cursor: 'pointer',
                     color: '#666'
                   }}
+                  onClick={() => setShowAgentCenter(true)}
+                  onMouseEnter={(e) => e.currentTarget.style.background = '#f5f5f5'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span>📦</span>
@@ -1762,7 +1846,7 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
               </div>
 
               {/* 群组列表 */}
-              {agentGroups.length > 0 && (
+              {/* {agentGroups.length > 0 && (
                 <div style={{ marginBottom: '24px' }}>
                   <div style={{
                     fontSize: '12px',
@@ -1885,7 +1969,7 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                     </div>
                   )}
                 </div>
-              )}
+              )} */}
 
               <div>
                 <div style={{
@@ -1971,8 +2055,172 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
           padding: '24px',
           minHeight: '100vh'
         }}>
-          {/* 对话界面（包括群组对话和普通对话） */}
-          {(currentGroup || currentConversation) ? (
+          {/* 智能体中心界面 */}
+          {showAgentCenter ? (
+            <div style={{ width: '100%', maxWidth: '1400px' }}>
+              {/* Header */}
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '32px'
+              }}>
+                <h2 style={{ fontSize: '24px', fontWeight: 600, margin: 0 }}>智能体中心</h2>
+                <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                  <Button
+                    icon={<UserOutlined />}
+                    onClick={() => setShowManageDisplay(true)}
+                  >
+                    管理显示
+                  </Button>
+                  <Input
+                    placeholder="搜索智能体"
+                    prefix={<SearchOutlined />}
+                    style={{ width: '280px' }}
+                    value={agentCenterSearch}
+                    onChange={(e) => setAgentCenterSearch(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {/* Category Tabs */}
+              <div style={{
+                display: 'flex',
+                gap: '12px',
+                marginBottom: '32px',
+                borderBottom: '1px solid #f0f0f0',
+                paddingBottom: '12px'
+              }}>
+                {['全部', '行业分析', '编程开发', '数据分析', '内容创作'].map(cat => (
+                  <div
+                    key={cat}
+                    onClick={() => setAgentCenterCategory(cat)}
+                    style={{
+                      padding: '8px 20px',
+                      borderRadius: '20px',
+                      background: agentCenterCategory === cat ? '#EEF2FF' : 'transparent',
+                      color: agentCenterCategory === cat ? '#6366F1' : '#666',
+                      cursor: 'pointer',
+                      fontSize: '14px',
+                      fontWeight: agentCenterCategory === cat ? 500 : 400,
+                      transition: 'all 0.3s'
+                    }}
+                  >
+                    {cat}
+                  </div>
+                ))}
+              </div>
+
+              {/* Agent Cards Grid */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(450px, 1fr))',
+                gap: '20px'
+              }}>
+                {allAgents
+                  .filter(agent => {
+                    const matchCategory = agentCenterCategory === '全部' || agent.category === agentCenterCategory;
+                    const matchSearch = agentCenterSearch === '' ||
+                      agent.name.toLowerCase().includes(agentCenterSearch.toLowerCase()) ||
+                      agent.category.toLowerCase().includes(agentCenterSearch.toLowerCase());
+                    return matchCategory && matchSearch;
+                  })
+                  .map(agent => (
+                    <div
+                      key={agent.id}
+                      style={{
+                        border: '1px solid #f0f0f0',
+                        borderRadius: '12px',
+                        padding: '20px',
+                        cursor: 'pointer',
+                        transition: 'all 0.3s',
+                        background: '#fff'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)';
+                        e.currentTarget.style.borderColor = agent.color;
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.boxShadow = 'none';
+                        e.currentTarget.style.borderColor = '#f0f0f0';
+                      }}
+                      onClick={() => {
+                        setShowAgentCenter(false);
+                        setMentionedAgents([agent]);
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
+                        {/* Agent Icon */}
+                        <div style={{
+                          width: '56px',
+                          height: '56px',
+                          background: `${agent.color}22`,
+                          borderRadius: '12px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '28px',
+                          flexShrink: 0
+                        }}>
+                          {agent.icon}
+                        </div>
+
+                        {/* Agent Info */}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                            <h3 style={{ fontSize: '16px', fontWeight: 600, margin: 0 }}>{agent.name}</h3>
+                            {agent.isMultiAgent && (
+                              <Tag color="#6366F1" style={{ margin: 0 }}>多智能体</Tag>
+                            )}
+                          </div>
+                          <p style={{
+                            fontSize: '13px',
+                            color: '#999',
+                            margin: '0 0 12px 0',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap'
+                          }}>
+                            {agent.category}
+                          </p>
+
+                          {/* Multi-Agent Members */}
+                          {agent.isMultiAgent && agent.multiAgentMembers && agent.multiAgentMembers.length > 0 && (
+                            <div style={{
+                              display: 'flex',
+                              gap: '6px',
+                              flexWrap: 'wrap',
+                              marginTop: '12px',
+                              paddingTop: '12px',
+                              borderTop: '1px solid #f5f5f5'
+                            }}>
+                              <span style={{ fontSize: '12px', color: '#999', marginRight: '4px' }}>成员:</span>
+                              {agent.multiAgentMembers.map((member) => (
+                                <span
+                                  key={member.id}
+                                  style={{
+                                    fontSize: '12px',
+                                    padding: '2px 8px',
+                                    borderRadius: '6px',
+                                    background: `${member.color}15`,
+                                    color: member.color,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '4px'
+                                  }}
+                                >
+                                  {member.icon} {member.name}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          ) : (currentGroup || currentConversation) ? (
             <div style={{ width: '100%', maxWidth: '1000px', height: '100%', display: 'flex', flexDirection: 'column' }}>
               {/* 对话头部 */}
               <div style={{
@@ -2602,7 +2850,7 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
             maxWidth: '800px',
             position: 'relative'
           }}>
-            {/* @智能体/群组面板 */}
+            {/* @智能体面板 */}
             {showMentionPanel && (
               <div style={{
                 position: 'absolute',
@@ -2618,130 +2866,51 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                 overflowY: 'auto',
                 zIndex: 1000
               }}>
-                {/* 选项卡 */}
-                <div style={{
-                  display: 'flex',
-                  gap: '8px',
-                  marginBottom: '16px',
-                  borderBottom: '1px solid #f0f0f0',
-                  paddingBottom: '8px'
-                }}>
-                  <div
-                    onClick={() => setMentionType('agent')}
-                    style={{
-                      padding: '8px 20px',
-                      borderRadius: '20px',
-                      background: mentionType === 'agent' ? '#f0f0f0' : 'transparent',
-                      cursor: 'pointer',
-                      fontSize: '14px',
-                      fontWeight: mentionType === 'agent' ? 500 : 400,
-                      transition: 'all 0.3s'
-                    }}
-                  >
-                    智能体
+                <div>
+                  <div style={{ fontSize: '12px', color: '#999', marginBottom: '12px' }}>
+                    选择智能体（单选）
                   </div>
-                  <div
-                    onClick={() => setMentionType('group')}
-                    style={{
-                      padding: '8px 20px',
-                      borderRadius: '20px',
-                      background: mentionType === 'group' ? '#f0f0f0' : 'transparent',
-                      cursor: 'pointer',
-                      fontSize: '14px',
-                      fontWeight: mentionType === 'group' ? 500 : 400,
-                      transition: 'all 0.3s'
-                    }}
-                  >
-                    群组
-                  </div>
+                  {allAgents.map(agent => {
+                    console.log(`智能体: ${agent.name}, isMultiAgent: ${agent.isMultiAgent}`);
+                    return (
+                    <div
+                      key={agent.id}
+                      onClick={() => handleSelectAgent(agent)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                        padding: '12px',
+                        borderRadius: '8px',
+                        cursor: 'pointer',
+                        marginBottom: '4px',
+                        transition: 'background 0.3s'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = '#f5f5f5'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    >
+                      <div style={{
+                        width: '32px',
+                        height: '32px',
+                        background: `${agent.color}22`,
+                        borderRadius: '6px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '16px'
+                      }}>
+                        {agent.icon}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: '14px', fontWeight: 500 }}>{agent.name}</div>
+                        <div style={{ fontSize: '12px', color: '#999' }}>{agent.category}</div>
+                      </div>
+                      {agent.isMultiAgent && (
+                        <Tag color="#6366F1" style={{ margin: 0, fontSize: '12px' }}>多智能体</Tag>
+                      )}
+                    </div>
+                  )})}
                 </div>
-
-                {/* 内容 */}
-                {mentionType === 'agent' ? (
-                  <div>
-                    <div style={{ fontSize: '12px', color: '#999', marginBottom: '12px' }}>
-                      选择智能体
-                    </div>
-                    {allAgents.map(agent => (
-                      <div
-                        key={agent.id}
-                        onClick={() => handleSelectAgent(agent)}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '12px',
-                          padding: '12px',
-                          borderRadius: '8px',
-                          cursor: 'pointer',
-                          marginBottom: '4px',
-                          transition: 'background 0.3s'
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = '#f5f5f5'}
-                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                      >
-                        <div style={{
-                          width: '32px',
-                          height: '32px',
-                          background: `${agent.color}22`,
-                          borderRadius: '6px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: '16px'
-                        }}>
-                          {agent.icon}
-                        </div>
-                        <div>
-                          <div style={{ fontSize: '14px', fontWeight: 500 }}>{agent.name}</div>
-                          <div style={{ fontSize: '12px', color: '#999' }}>{agent.category}</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div>
-                    <div style={{ fontSize: '12px', color: '#999', marginBottom: '12px' }}>
-                      选择群组
-                    </div>
-                    {agentGroups.length === 0 ? (
-                      <div style={{ textAlign: 'center', padding: '40px 0', color: '#999' }}>
-                        <TeamOutlined style={{ fontSize: '32px', marginBottom: '8px' }} />
-                        <div>暂无群组</div>
-                        <div style={{ fontSize: '12px', marginTop: '4px' }}>请先创建群组</div>
-                      </div>
-                    ) : (
-                      agentGroups.map(group => (
-                        <div
-                          key={group.id}
-                          onClick={() => handleSelectGroup(group)}
-                          style={{
-                            padding: '12px',
-                            borderRadius: '8px',
-                            cursor: 'pointer',
-                            marginBottom: '4px',
-                            transition: 'background 0.3s',
-                            border: '1px solid #f0f0f0'
-                          }}
-                          onMouseEnter={(e) => e.currentTarget.style.background = '#f5f5f5'}
-                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                        >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                            <TeamOutlined style={{ color: '#6366F1' }} />
-                            <span style={{ fontSize: '14px', fontWeight: 500 }}>{group.name}</span>
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
-                            {group.members.slice(0, 5).map(member => (
-                              <span key={member.id} style={{ fontSize: '14px' }}>{member.icon}</span>
-                            ))}
-                            {group.members.length > 5 && (
-                              <span style={{ fontSize: '12px', color: '#999' }}>+{group.members.length - 5}</span>
-                            )}
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                )}
               </div>
             )}
 
@@ -2942,27 +3111,9 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
               boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
               padding: '16px'
             }}>
-              {/* 已选择的智能体和群组标签 */}
-              {(mentionedAgents.length > 0 || selectedGroups.length > 0) && (
+              {/* 已选择的智能体标签 */}
+              {mentionedAgents.length > 0 && (
                 <div style={{ marginBottom: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  {selectedGroups.map(group => (
-                    <Tag
-                      key={group.id}
-                      closable
-                      onClose={() => setSelectedGroups(selectedGroups.filter(g => g.id !== group.id))}
-                      style={{
-                        padding: '6px 12px',
-                        borderRadius: '12px',
-                        background: '#EEF2FF',
-                        border: '1px solid #6366F1',
-                        color: '#6366F1',
-                        fontSize: '13px'
-                      }}
-                    >
-                      <TeamOutlined style={{ marginRight: '4px' }} />
-                      @{group.name}
-                    </Tag>
-                  ))}
                   {mentionedAgents.map(agent => (
                     <Tag
                       key={agent.id}
@@ -3012,28 +3163,14 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                   ref={editorRef}
                   value={inputValue}
                   onChange={(value) => setInputValue(value)}
-                  placeholder="给我发消息或布置任务（输入 @ 提及智能体或群组）"
+                  placeholder="给我发消息或布置任务（输入 @ 提及智能体）"
                   agents={allAgents}
-                  groups={agentGroups.map(group => ({
-                    id: group.id,
-                    name: group.name,
-                    icon: '👥',
-                    type: 'group' as const,
-                    lastUsed: Date.now() - Math.floor(Math.random() * 86400000 * 7)  // Mock lastUsed within last 7 days
-                  }))}
+                  groups={[]}
                   onSelectAgent={(agent) => {
-                    // Check if it's a group
-                    const groupData = agentGroups.find(g => g.id === agent.id);
-                    if (groupData) {
-                      if (!selectedGroups.find(g => g.id === agent.id)) {
-                        setSelectedGroups([...selectedGroups, groupData]);
-                      }
-                    } else {
-                      // It's an agent
-                      const agentData = allAgents.find(a => a.id === agent.id);
-                      if (agentData && !mentionedAgents.find(a => a.id === agent.id)) {
-                        setMentionedAgents([...mentionedAgents, agentData]);
-                      }
+                    // 单选模式，直接设置选中的智能体
+                    const agentData = allAgents.find(a => a.id === agent.id);
+                    if (agentData) {
+                      setMentionedAgents([agentData]);
                     }
                   }}
                   minRows={4}
@@ -3253,6 +3390,85 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
               </div>
             </div>
           )}
+        </div>
+      </Modal>
+
+      {/* 管理显示 Modal */}
+      <Modal
+        title="管理侧边栏显示"
+        open={showManageDisplay}
+        onCancel={() => setShowManageDisplay(false)}
+        onOk={() => setShowManageDisplay(false)}
+        width={600}
+      >
+        <div style={{ marginBottom: '16px' }}>
+          <p style={{ color: '#666', marginBottom: '16px' }}>
+            选择最多5个智能体显示在侧边栏快捷入口
+          </p>
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px'
+          }}>
+            {allAgents.map(agent => (
+              <div
+                key={agent.id}
+                onClick={() => {
+                  if (pinnedAgentIds.includes(agent.id)) {
+                    setPinnedAgentIds(pinnedAgentIds.filter(id => id !== agent.id));
+                  } else if (pinnedAgentIds.length < 5) {
+                    setPinnedAgentIds([...pinnedAgentIds, agent.id]);
+                  } else {
+                    message.warning('最多只能选择5个智能体');
+                  }
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  padding: '12px',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  border: `1px solid ${pinnedAgentIds.includes(agent.id) ? agent.color : '#f0f0f0'}`,
+                  background: pinnedAgentIds.includes(agent.id) ? `${agent.color}10` : '#fff',
+                  transition: 'all 0.3s'
+                }}
+              >
+                <div style={{
+                  width: '32px',
+                  height: '32px',
+                  background: `${agent.color}22`,
+                  borderRadius: '6px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '16px'
+                }}>
+                  {agent.icon}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: '14px', fontWeight: 500 }}>{agent.name}</div>
+                  <div style={{ fontSize: '12px', color: '#999' }}>{agent.category}</div>
+                </div>
+                {agent.isMultiAgent && (
+                  <Tag color="#6366F1" style={{ margin: 0 }}>多智能体</Tag>
+                )}
+                {pinnedAgentIds.includes(agent.id) && (
+                  <CheckCircleOutlined style={{ color: agent.color, fontSize: '20px' }} />
+                )}
+              </div>
+            ))}
+          </div>
+          <div style={{
+            marginTop: '16px',
+            padding: '12px',
+            background: '#f5f5f5',
+            borderRadius: '8px',
+            fontSize: '12px',
+            color: '#666'
+          }}>
+            已选择 {pinnedAgentIds.length}/5 个智能体
+          </div>
         </div>
       </Modal>
     </Layout>

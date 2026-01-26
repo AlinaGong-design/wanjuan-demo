@@ -59,8 +59,8 @@
 
 /* 左侧配置面板 */
 .config-panel {
-  width: 300px;
-  flex-shrink: 0;
+  width: 450px;
+  /* flex-shrink: 0; */
   background: #fff;
   border-right: 1px solid #e8e8e8;
   overflow-y: auto;
@@ -145,8 +145,7 @@
 
 /* 中间Agent配置面板 */
 .agent-config-panel {
-  flex: 1;
-  min-width: 0;
+  min-width: 420px;
   background: #fff;
   overflow-y: auto;
   padding: 20px;
@@ -252,6 +251,7 @@
 /* 右侧预览面板 */
 .preview-panel {
   width: 360px;
+  flex-grow: 1;
   flex-shrink: 0;
   background: #fff;
   border-left: 1px solid #e8e8e8;
@@ -328,13 +328,13 @@
 }
 
 /* 响应式适配 */
-@media (max-width: 1400px) {
+/* @media (max-width: 1400px) {
   .config-panel {
-    width: 280px;
+    width: 480px;
   }
 
   .preview-panel {
-    width: 320px;
+    width: 420px;
   }
 }
 
@@ -342,4 +342,4 @@
   .preview-panel {
     display: none;
   }
-}
+} */
