@@ -9,7 +9,9 @@ import {
   Tabs,
   Modal,
   Card,
-  message
+  message,
+  Tooltip,
+  Select
 } from 'antd';
 import { PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
@@ -27,6 +29,8 @@ interface AgentData {
   createTime: string;
   status: string[];
   type: 'autonomous' | 'collaborative'; // 自主规划 或 多智能体协同
+  skillCount?: number; // 配置的技能数量
+  skills?: string[]; // 配置的技能列表
 }
 
 interface AgentListProps {
@@ -46,6 +50,10 @@ const AgentList: React.FC<AgentListProps> = ({
   const [activeTab, setActiveTab] = useState('mine');
   const [showTypeModal, setShowTypeModal] = useState(false);
 
+  // 筛选条件
+  const [skillFilter, setSkillFilter] = useState<string>('all'); // all | linked | unlinked
+  const [typeFilter, setTypeFilter] = useState<string>('all'); // all | autonomous | collaborative
+
   // 模拟数据
   const [dataSource] = useState<AgentData[]>([
     {
@@ -57,7 +65,9 @@ const AgentList: React.FC<AgentListProps> = ({
       department: '研发部门',
       createTime: '2026-01-25 01:45:38',
       status: ['商店', '共享', 'API', 'MCP'],
-      type: 'autonomous'
+      type: 'autonomous',
+      skillCount: 3,
+      skills: ['网页搜索', '数据分析', 'PDF解析']
     },
     {
       key: '2',
@@ -68,7 +78,9 @@ const AgentList: React.FC<AgentListProps> = ({
       department: '研发部门',
       createTime: '2026-01-25 01:44:22',
       status: ['商店', '共享', 'API', 'MCP'],
-      type: 'autonomous'
+      type: 'autonomous',
+      skillCount: 2,
+      skills: ['Python执行器', '文档分析']
     },
     {
       key: '3',
@@ -79,7 +91,48 @@ const AgentList: React.FC<AgentListProps> = ({
       department: '研发部门',
       createTime: '2026-01-23 18:57:27',
       status: ['商店', '共享', 'API', 'MCP'],
-      type: 'collaborative'
+      type: 'collaborative',
+      skillCount: 5,
+      skills: ['网页搜索', 'PDF解析', 'Python执行器', '数据分析', '知识库检索']
+    },
+    {
+      key: '4',
+      id: 4,
+      name: '客服助手',
+      description: '智能客服对话助手',
+      creator: '张三',
+      department: '客服部门',
+      createTime: '2026-01-24 10:30:00',
+      status: ['商店', '共享'],
+      type: 'autonomous',
+      skillCount: 0,
+      skills: []
+    },
+    {
+      key: '5',
+      id: 5,
+      name: '营销策划团队',
+      description: '多智能体协作的营销策划方案生成',
+      creator: '李四',
+      department: '市场部门',
+      createTime: '2026-01-22 14:20:15',
+      status: ['商店', '共享', 'API'],
+      type: 'collaborative',
+      skillCount: 0,
+      skills: []
+    },
+    {
+      key: '6',
+      id: 6,
+      name: '代码审查助手',
+      description: '自动代码审查和建议',
+      creator: '王五',
+      department: '研发部门',
+      createTime: '2026-01-21 16:45:30',
+      status: ['共享', 'API'],
+      type: 'autonomous',
+      skillCount: 4,
+      skills: ['代码执行', '代码分析', 'Git操作', '文档生成']
     }
   ]);
 
@@ -94,7 +147,15 @@ const AgentList: React.FC<AgentListProps> = ({
       title: '名称',
       dataIndex: 'name',
       key: 'name',
-      width: 150
+      width: 200,
+      render: (name: string, record: AgentData) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span>{name}</span>
+          {record.type === 'collaborative' && (
+            <Tag color="#6366F1" style={{ margin: 0 }}>多智能体</Tag>
+          )}
+        </div>
+      )
     },
     {
       title: '简介',
@@ -124,8 +185,8 @@ const AgentList: React.FC<AgentListProps> = ({
       title: '状态',
       key: 'status',
       dataIndex: 'status',
-      width: 250,
-      render: (tags: string[]) => (
+      width: 300,
+      render: (tags: string[], record: AgentData) => (
         <>
           {tags.map((tag) => {
             let color = tag === '商店' ? 'blue' : tag === '共享' ? 'green' : 'default';
@@ -135,6 +196,37 @@ const AgentList: React.FC<AgentListProps> = ({
               </Tag>
             );
           })}
+          {record.skillCount !== undefined && record.skillCount > 0 && (
+            <Tooltip
+              title={
+                <div>
+                  <div style={{ marginBottom: '4px', fontWeight: 500 }}>配置的技能：</div>
+                  {record.skills?.map((skill, idx) => (
+                    <div key={idx} style={{ padding: '2px 0' }}>• {skill}</div>
+                  ))}
+                </div>
+              }
+              placement="top"
+            >
+              <Tag
+                color="purple"
+                style={{
+                  cursor: 'pointer',
+                  transition: 'all 0.3s'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = 'translateY(-1px)';
+                  e.currentTarget.style.boxShadow = '0 2px 4px rgba(147, 51, 234, 0.3)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = 'none';
+                }}
+              >
+                Skill ({record.skillCount})
+              </Tag>
+            </Tooltip>
+          )}
         </>
       )
     },
@@ -191,6 +283,33 @@ const AgentList: React.FC<AgentListProps> = ({
     onCreateAgent?.(type);
   };
 
+  // 筛选逻辑
+  const filteredDataSource = dataSource.filter(agent => {
+    // 名称搜索
+    const matchesSearch = searchText === '' || agent.name.toLowerCase().includes(searchText.toLowerCase());
+
+    // Skill关联筛选
+    const matchesSkill =
+      skillFilter === 'all' ||
+      (skillFilter === 'linked' && agent.skillCount && agent.skillCount > 0) ||
+      (skillFilter === 'unlinked' && (!agent.skillCount || agent.skillCount === 0));
+
+    // 智能体类型筛选
+    const matchesType =
+      typeFilter === 'all' ||
+      (typeFilter === 'autonomous' && agent.type === 'autonomous') ||
+      (typeFilter === 'collaborative' && agent.type === 'collaborative');
+
+    return matchesSearch && matchesSkill && matchesType;
+  });
+
+  // 重置筛选
+  const handleResetFilters = () => {
+    setSearchText('');
+    setSkillFilter('all');
+    setTypeFilter('all');
+  };
+
   return (
     <div className="agent-list-container">
       {/* 标签页 */}
@@ -206,40 +325,62 @@ const AgentList: React.FC<AgentListProps> = ({
 
       {/* 搜索和筛选区域 */}
       <div className="agent-list-filters">
-        <Space size="middle" style={{ marginBottom: 16, width: '100%' }}>
+        <Space size="middle" style={{ marginBottom: 16, width: '100%', flexWrap: 'wrap' }}>
           <Input
             placeholder="请输入Agent名称"
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
-            style={{ width: 300 }}
+            style={{ width: 200 }}
+            allowClear
           />
+          <Select
+            value={typeFilter}
+            onChange={setTypeFilter}
+            style={{ width: 150 }}
+          >
+            <Select.Option value="all">全部类型</Select.Option>
+            <Select.Option value="autonomous">单智能体</Select.Option>
+            <Select.Option value="collaborative">多智能体</Select.Option>
+          </Select>
+          <Select
+            value={skillFilter}
+            onChange={setSkillFilter}
+            style={{ width: 150 }}
+          >
+            <Select.Option value="all">全部Skill</Select.Option>
+            <Select.Option value="linked">已关联Skill</Select.Option>
+            <Select.Option value="unlinked">未关联Skill</Select.Option>
+          </Select>
           <RangePicker
             placeholder={['创建开始日期', '创建结束日期']}
-            style={{ width: 360 }}
+            style={{ width: 280 }}
           />
-          <div style={{ flex: 1 }} />
-          <Button icon={<SearchOutlined />}>重置</Button>
+          <Button icon={<SearchOutlined />} onClick={handleResetFilters}>重置</Button>
           <Button type="primary" icon={<SearchOutlined />}>
             查询
           </Button>
         </Space>
 
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          onClick={handleCreateClick}
-          style={{ marginBottom: 16 }}
-        >
-          创建Agent
-        </Button>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <span style={{ color: '#666', fontSize: '14px' }}>
+            共找到 {filteredDataSource.length} 个Agent
+          </span>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={handleCreateClick}
+          >
+            创建Agent
+          </Button>
+        </div>
       </div>
 
       {/* 表格 */}
       <Table
         columns={columns}
-        dataSource={dataSource}
+        dataSource={filteredDataSource}
         pagination={{
-          total: 3,
+          total: filteredDataSource.length,
           pageSize: 10,
           showTotal: (total) => `共 ${total} 条记录`,
           showSizeChanger: true

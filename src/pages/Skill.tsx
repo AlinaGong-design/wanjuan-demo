@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
-import { Card, Button, Tag, Space, Tooltip, Row, Col } from 'antd';
+import { Card, Button, Tag, Space, Tooltip, Row, Col, Input, Select, Modal, message } from 'antd';
 import {
   PlusOutlined,
   EditOutlined,
   EyeOutlined,
   CloudUploadOutlined,
-  CloudDownloadOutlined
+  CloudDownloadOutlined,
+  SearchOutlined,
+  DeleteOutlined
 } from '@ant-design/icons';
 
 export interface SkillItem {
@@ -14,8 +16,11 @@ export interface SkillItem {
   description: string;
   icon: string;
   status: 'published' | 'draft' | 'offline';
+  category: string; // 技能分类
   createTime: string;
   updateTime: string;
+  agentCount?: number; // 关联的智能体数量
+  agents?: string[]; // 关联的智能体名称列表
 }
 
 interface SkillProps {
@@ -25,16 +30,24 @@ interface SkillProps {
 }
 
 const Skill: React.FC<SkillProps> = ({ onPreviewSkill, onCreateSkill, onEditSkill }) => {
+  // 搜索和筛选状态
+  const [searchText, setSearchText] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+
   // Mock数据
-  const [skills] = useState<SkillItem[]>([
+  const [skills, setSkills] = useState<SkillItem[]>([
     {
       id: '1',
       name: '写作助手',
       description: '帮助用户完成各类文章、报告、邮件等写作任务，支持多种文体和风格',
       icon: '✏️',
       status: 'published',
+      category: '内容创作',
       createTime: '2024-01-15',
-      updateTime: '2024-01-20'
+      updateTime: '2024-01-20',
+      agentCount: 5,
+      agents: ['文案写作助手', '翻译助手', 'Python编程助手', '数据分析师', 'JavaScript专家']
     },
     {
       id: '2',
@@ -42,8 +55,11 @@ const Skill: React.FC<SkillProps> = ({ onPreviewSkill, onCreateSkill, onEditSkil
       description: '根据用户需求自动生成PPT大纲和内容，支持多种主题模板',
       icon: '📊',
       status: 'published',
+      category: '文档处理',
       createTime: '2024-01-10',
-      updateTime: '2024-01-18'
+      updateTime: '2024-01-18',
+      agentCount: 3,
+      agents: ['文案写作助手', '设计助手', '数据分析师']
     },
     {
       id: '3',
@@ -51,8 +67,11 @@ const Skill: React.FC<SkillProps> = ({ onPreviewSkill, onCreateSkill, onEditSkil
       description: '为短视频、Vlog等创作提供脚本策划和文案撰写服务',
       icon: '🎬',
       status: 'draft',
+      category: '内容创作',
       createTime: '2024-01-12',
-      updateTime: '2024-01-19'
+      updateTime: '2024-01-19',
+      agentCount: 2,
+      agents: ['文案写作助手', '翻译助手']
     },
     {
       id: '4',
@@ -60,8 +79,11 @@ const Skill: React.FC<SkillProps> = ({ onPreviewSkill, onCreateSkill, onEditSkil
       description: '提供设计建议、配色方案、排版指导等设计相关服务',
       icon: '🎨',
       status: 'published',
+      category: '内容创作',
       createTime: '2024-01-08',
-      updateTime: '2024-01-16'
+      updateTime: '2024-01-16',
+      agentCount: 1,
+      agents: ['设计助手']
     },
     {
       id: '5',
@@ -69,8 +91,11 @@ const Skill: React.FC<SkillProps> = ({ onPreviewSkill, onCreateSkill, onEditSkil
       description: '对代码进行质量检查、性能优化建议、安全漏洞检测',
       icon: '💻',
       status: 'offline',
+      category: '代码执行',
       createTime: '2024-01-05',
-      updateTime: '2024-01-14'
+      updateTime: '2024-01-14',
+      agentCount: 0,
+      agents: []
     },
     {
       id: '6',
@@ -78,10 +103,63 @@ const Skill: React.FC<SkillProps> = ({ onPreviewSkill, onCreateSkill, onEditSkil
       description: '帮助用户分析数据、生成报表、提供数据洞察',
       icon: '📈',
       status: 'published',
+      category: '数据分析',
       createTime: '2024-01-03',
-      updateTime: '2024-01-17'
+      updateTime: '2024-01-17',
+      agentCount: 4,
+      agents: ['数据分析师', 'SQL优化专家', 'Python编程助手', 'JavaScript专家']
+    },
+    {
+      id: '7',
+      name: '网页搜索',
+      description: '搜索互联网上的实时信息，支持关键词搜索、新闻搜索等多种模式',
+      icon: '🌐',
+      status: 'published',
+      category: '信息获取',
+      createTime: '2024-01-20',
+      updateTime: '2024-01-22',
+      agentCount: 6,
+      agents: ['互联网行业洞察', '石油行业知识问答小助手', 'Python编程助手', '数据分析师', 'JavaScript专家', '文案写作助手']
+    },
+    {
+      id: '8',
+      name: 'PDF解析',
+      description: '解析PDF文档内容，提取文本、图片等信息',
+      icon: '📄',
+      status: 'draft',
+      category: '文档处理',
+      createTime: '2024-01-18',
+      updateTime: '2024-01-21',
+      agentCount: 2,
+      agents: ['数据分析师', 'Python编程助手']
+    },
+    {
+      id: '9',
+      name: 'Python执行器',
+      description: '安全地执行Python代码，支持数据处理、科学计算等任务',
+      icon: '🐍',
+      status: 'published',
+      category: '代码执行',
+      createTime: '2024-01-16',
+      updateTime: '2024-01-19',
+      agentCount: 3,
+      agents: ['Python编程助手', '数据分析师', 'SQL优化专家']
     }
   ]);
+
+  // 筛选逻辑
+  const filteredSkills = skills.filter(skill => {
+    // 名称搜索
+    const matchesSearch = skill.name.toLowerCase().includes(searchText.toLowerCase());
+
+    // 状态筛选
+    const matchesStatus = statusFilter === 'all' || skill.status === statusFilter;
+
+    // 分类筛选
+    const matchesCategory = categoryFilter === 'all' || skill.category === categoryFilter;
+
+    return matchesSearch && matchesStatus && matchesCategory;
+  });
 
   const getStatusTag = (status: string) => {
     const statusConfig = {
@@ -101,13 +179,33 @@ const Skill: React.FC<SkillProps> = ({ onPreviewSkill, onCreateSkill, onEditSkil
   };
 
   const handlePublish = (id: string) => {
-    console.log('发布技能:', id);
-    // TODO: 实现发布功能
+    setSkills(skills.map(skill =>
+      skill.id === id ? { ...skill, status: 'published' as const } : skill
+    ));
+    message.success('发布成功');
   };
 
   const handleOffline = (id: string) => {
-    console.log('下架技能:', id);
-    // TODO: 实现下架功能
+    setSkills(skills.map(skill =>
+      skill.id === id ? { ...skill, status: 'offline' as const } : skill
+    ));
+    message.success('下架成功');
+  };
+
+  const handleDelete = (id: string, name: string) => {
+    Modal.confirm({
+      title: '确认删除',
+      content: `确定要删除 "${name}" 吗？删除后无法恢复。`,
+      okText: '确认',
+      cancelText: '取消',
+      okButtonProps: {
+        danger: true,
+      },
+      onOk: () => {
+        setSkills(skills.filter(skill => skill.id !== id));
+        message.success('删除成功');
+      },
+    });
   };
 
   const handlePreview = (skill: SkillItem) => {
@@ -156,8 +254,56 @@ const Skill: React.FC<SkillProps> = ({ onPreviewSkill, onCreateSkill, onEditSkil
         </Button>
       </div>
 
+      {/* 搜索和筛选区域 */}
+      <div style={{ marginBottom: '24px' }}>
+        <Space size="middle" style={{ marginBottom: 16 }}>
+          <Input
+            placeholder="请输入Skill名称"
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            prefix={<SearchOutlined />}
+            style={{ width: 300 }}
+            allowClear
+          />
+          <Select
+            value={statusFilter}
+            onChange={setStatusFilter}
+            style={{ width: 150 }}
+          >
+            <Select.Option value="all">全部状态</Select.Option>
+            <Select.Option value="published">已发布</Select.Option>
+            <Select.Option value="draft">草稿</Select.Option>
+            <Select.Option value="offline">已下架</Select.Option>
+          </Select>
+          <Select
+            value={categoryFilter}
+            onChange={setCategoryFilter}
+            style={{ width: 150 }}
+          >
+            <Select.Option value="all">全部分类</Select.Option>
+            <Select.Option value="信息获取">信息获取</Select.Option>
+            <Select.Option value="文档处理">文档处理</Select.Option>
+            <Select.Option value="代码执行">代码执行</Select.Option>
+            <Select.Option value="数据分析">数据分析</Select.Option>
+            <Select.Option value="内容创作">内容创作</Select.Option>
+          </Select>
+          <Button
+            onClick={() => {
+              setSearchText('');
+              setStatusFilter('all');
+              setCategoryFilter('all');
+            }}
+          >
+            重置
+          </Button>
+        </Space>
+        <div style={{ color: '#666', fontSize: '14px' }}>
+          共找到 {filteredSkills.length} 个Skill
+        </div>
+      </div>
+
       <Row gutter={[16, 16]}>
-        {skills.map((skill) => (
+        {filteredSkills.map((skill) => (
           <Col xs={24} sm={12} lg={8} xl={6} key={skill.id}>
             <Card
               hoverable
@@ -228,6 +374,44 @@ const Skill: React.FC<SkillProps> = ({ onPreviewSkill, onCreateSkill, onEditSkil
                 }}>
                   <div>创建: {skill.createTime}</div>
                   <div>更新: {skill.updateTime}</div>
+                  {skill.agentCount !== undefined && skill.agentCount > 0 && (
+                    <Tooltip
+                      title={
+                        <div>
+                          <div style={{ marginBottom: '4px', fontWeight: 500 }}>关联的智能体：</div>
+                          {skill.agents?.map((agent, idx) => (
+                            <div key={idx} style={{ padding: '2px 0' }}>• {agent}</div>
+                          ))}
+                        </div>
+                      }
+                      placement="top"
+                    >
+                      <div style={{
+                        marginTop: '8px',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        padding: '4px 8px',
+                        background: '#F0F0FF',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        transition: 'all 0.3s'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = '#E0E0FF';
+                        e.currentTarget.style.transform = 'translateY(-1px)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = '#F0F0FF';
+                        e.currentTarget.style.transform = 'translateY(0)';
+                      }}>
+                        <span style={{ fontSize: '12px', color: '#6366F1' }}>👥</span>
+                        <span style={{ fontSize: '12px', color: '#6366F1', fontWeight: 500 }}>
+                          {skill.agentCount} 个智能体
+                        </span>
+                      </div>
+                    </Tooltip>
+                  )}
                 </div>
 
                 {/* 操作按钮 */}
@@ -267,6 +451,14 @@ const Skill: React.FC<SkillProps> = ({ onPreviewSkill, onCreateSkill, onEditSkil
                       />
                     </Tooltip>
                   )}
+                  <Tooltip title="删除">
+                    <Button
+                      type="text"
+                      icon={<DeleteOutlined />}
+                      onClick={() => handleDelete(skill.id, skill.name)}
+                      style={{ color: '#EF4444' }}
+                    />
+                  </Tooltip>
                 </Space>
               </div>
             </Card>
@@ -274,8 +466,8 @@ const Skill: React.FC<SkillProps> = ({ onPreviewSkill, onCreateSkill, onEditSkil
         ))}
       </Row>
 
-      {/* 空状态提示（当没有技能时显示） */}
-      {skills.length === 0 && (
+      {/* 空状态提示 */}
+      {filteredSkills.length === 0 && (
         <div style={{
           textAlign: 'center',
           padding: '60px 20px',
@@ -283,21 +475,31 @@ const Skill: React.FC<SkillProps> = ({ onPreviewSkill, onCreateSkill, onEditSkil
           borderRadius: '12px',
           marginTop: '20px'
         }}>
-          <div style={{ fontSize: '48px', marginBottom: '16px' }}>📦</div>
-          <h3 style={{ color: '#666', marginBottom: '8px' }}>暂无技能</h3>
-          <p style={{ color: '#999', marginBottom: '24px' }}>点击右上角"新增技能"按钮创建您的第一个技能</p>
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={handleAddSkill}
-            style={{
-              background: 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)',
-              border: 'none',
-              borderRadius: '8px'
-            }}
-          >
-            新增技能
-          </Button>
+          <div style={{ fontSize: '48px', marginBottom: '16px' }}>
+            {skills.length === 0 ? '📦' : '🔍'}
+          </div>
+          <h3 style={{ color: '#666', marginBottom: '8px' }}>
+            {skills.length === 0 ? '暂无技能' : '未找到相关Skill'}
+          </h3>
+          <p style={{ color: '#999', marginBottom: '24px' }}>
+            {skills.length === 0
+              ? '点击右上角"新增技能"按钮创建您的第一个技能'
+              : '尝试修改搜索关键词或筛选条件'}
+          </p>
+          {skills.length === 0 && (
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={handleAddSkill}
+              style={{
+                background: 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)',
+                border: 'none',
+                borderRadius: '8px'
+              }}
+            >
+              新增技能
+            </Button>
+          )}
         </div>
       )}
     </div>

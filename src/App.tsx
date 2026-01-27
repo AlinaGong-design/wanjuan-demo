@@ -123,6 +123,7 @@ function App() {
       description: '正在体验的技能',
       icon: skillIcon,
       status: 'published',
+      category: '内容创作',
       createTime: new Date().toISOString().split('T')[0],
       updateTime: new Date().toISOString().split('T')[0]
     };

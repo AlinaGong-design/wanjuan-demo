@@ -10,7 +10,8 @@ import {
   Avatar,
   Badge,
   Spin,
-  message
+  message,
+  Select
 } from 'antd';
 import {
   PlusOutlined,
@@ -46,6 +47,7 @@ interface ChatHistory {
   title: string;
   subtitle: string;
   time: string;
+  isMultiAgent?: boolean; // 是否为多智能体对话
 }
 
 interface Skill {
@@ -217,6 +219,8 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
   const [agentCenterSearch, setAgentCenterSearch] = useState('');
   const [showManageDisplay, setShowManageDisplay] = useState(false);
   const [pinnedAgentIds, setPinnedAgentIds] = useState<string[]>(['1', '3', '5', '4', '7']); // 默认固定5个智能体
+  const [agentCenterSceneFilter, setAgentCenterSceneFilter] = useState('全部'); // 场景筛选
+  const [agentCenterTypeFilter, setAgentCenterTypeFilter] = useState('全部'); // 类型筛选：全部/单智能体/多智能体
 
   // 所有智能体数据（按类别分组）
   const allAgents: Agent[] = [
@@ -1705,15 +1709,15 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
   };
 
   const chatHistory: ChatHistory[] = [
-    { id: '1', title: '你好', subtitle: '互联网行业洞察', time: '2小时' },
-    { id: '2', title: '你好', subtitle: '互联网行业洞察', time: '2小时' },
-    { id: '3', title: '你好，你能帮我干什么', subtitle: '系统内置自定义智能体', time: '2小时' },
-    { id: '4', title: '文档中内容', subtitle: '系统内置自定义智能体', time: '昨天' },
-    { id: '5', title: '天气小知识', subtitle: 'gzlxcz我找', time: '昨天' },
-    { id: '6', title: '图片中内容', subtitle: '系统内置自定义智能体', time: '昨天' },
-    { id: '7', title: '图片中内容', subtitle: '系统内置自定义智能体', time: '昨天' },
-    { id: '8', title: '新会话', subtitle: '系统内置自定义智能体', time: '昨天' },
-    { id: '9', title: '你好', subtitle: '', time: '' },
+    { id: '1', title: '你好', subtitle: '互联网行业洞察', time: '2小时', isMultiAgent: true },
+    { id: '2', title: '你好', subtitle: '互联网行业洞察', time: '2小时', isMultiAgent: true },
+    { id: '3', title: '你好，你能帮我干什么', subtitle: '系统内置自定义智能体', time: '2小时', isMultiAgent: false },
+    { id: '4', title: '文档中内容', subtitle: '系统内置自定义智能体', time: '昨天', isMultiAgent: false },
+    { id: '5', title: '天气小知识', subtitle: 'gzlxcz我找', time: '昨天', isMultiAgent: false },
+    { id: '6', title: '图片中内容', subtitle: '系统内置自定义智能体', time: '昨天', isMultiAgent: false },
+    { id: '7', title: '图片中内容', subtitle: '系统内置自定义智能体', time: '昨天', isMultiAgent: false },
+    { id: '8', title: '新会话', subtitle: '系统内置自定义智能体', time: '昨天', isMultiAgent: false },
+    { id: '9', title: '你好', subtitle: '', time: '', isMultiAgent: false },
   ];
 
   const modelMenuItems: MenuProps['items'] = [
@@ -1995,7 +1999,21 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                       onMouseEnter={(e) => e.currentTarget.style.background = '#f5f5f5'}
                       onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                     >
-                      <div style={{ fontSize: '14px', marginBottom: '4px', color: '#333' }}>{chat.title}</div>
+                      <div style={{
+                        fontSize: '14px',
+                        marginBottom: '4px',
+                        color: '#333',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px'
+                      }}>
+                        <span>{chat.title}</span>
+                        {chat.isMultiAgent && (
+                          <Tag color="#6366F1" style={{ margin: 0, fontSize: '11px', padding: '0 6px' }}>
+                            多智能体
+                          </Tag>
+                        )}
+                      </div>
                       {chat.subtitle && (
                         <div style={{ fontSize: '12px', color: '#999' }}>
                           {chat.time && `${chat.time} · `}{chat.subtitle}
@@ -2063,7 +2081,7 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
-                marginBottom: '32px'
+                marginBottom: '24px'
               }}>
                 <h2 style={{ fontSize: '24px', fontWeight: 600, margin: 0 }}>智能体中心</h2>
                 <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
@@ -2073,13 +2091,64 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                   >
                     管理显示
                   </Button>
+                </div>
+              </div>
+
+              {/* 搜索和筛选区域 */}
+              <div style={{ marginBottom: '24px' }}>
+                <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
                   <Input
-                    placeholder="搜索智能体"
+                    placeholder="搜索智能体名称或分类"
                     prefix={<SearchOutlined />}
                     style={{ width: '280px' }}
                     value={agentCenterSearch}
                     onChange={(e) => setAgentCenterSearch(e.target.value)}
+                    allowClear
                   />
+                  <Select
+                    value={agentCenterSceneFilter}
+                    onChange={setAgentCenterSceneFilter}
+                    style={{ width: 150 }}
+                  >
+                    <Select.Option value="全部">全部场景</Select.Option>
+                    <Select.Option value="行业分析">行业分析</Select.Option>
+                    <Select.Option value="编程开发">编程开发</Select.Option>
+                    <Select.Option value="数据分析">数据分析</Select.Option>
+                    <Select.Option value="内容创作">内容创作</Select.Option>
+                  </Select>
+                  <Select
+                    value={agentCenterTypeFilter}
+                    onChange={setAgentCenterTypeFilter}
+                    style={{ width: 150 }}
+                  >
+                    <Select.Option value="全部">全部类型</Select.Option>
+                    <Select.Option value="单智能体">单智能体</Select.Option>
+                    <Select.Option value="多智能体">多智能体</Select.Option>
+                  </Select>
+                  <Button
+                    onClick={() => {
+                      setAgentCenterSearch('');
+                      setAgentCenterSceneFilter('全部');
+                      setAgentCenterTypeFilter('全部');
+                      setAgentCenterCategory('全部');
+                    }}
+                  >
+                    重置
+                  </Button>
+                </div>
+                <div style={{ color: '#666', fontSize: '14px' }}>
+                  共找到 {allAgents.filter(agent => {
+                    const matchCategory = agentCenterCategory === '全部' || agent.category === agentCenterCategory;
+                    const matchSearch = agentCenterSearch === '' ||
+                      agent.name.toLowerCase().includes(agentCenterSearch.toLowerCase()) ||
+                      agent.category.toLowerCase().includes(agentCenterSearch.toLowerCase());
+                    const matchScene = agentCenterSceneFilter === '全部' || agent.category === agentCenterSceneFilter;
+                    const matchType =
+                      agentCenterTypeFilter === '全部' ||
+                      (agentCenterTypeFilter === '单智能体' && !agent.isMultiAgent) ||
+                      (agentCenterTypeFilter === '多智能体' && agent.isMultiAgent);
+                    return matchCategory && matchSearch && matchScene && matchType;
+                  }).length} 个智能体
                 </div>
               </div>
 
@@ -2089,7 +2158,8 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                 gap: '12px',
                 marginBottom: '32px',
                 borderBottom: '1px solid #f0f0f0',
-                paddingBottom: '12px'
+                paddingBottom: '12px',
+                flexWrap: 'wrap'
               }}>
                 {['全部', '行业分析', '编程开发', '数据分析', '内容创作'].map(cat => (
                   <div
@@ -2123,9 +2193,40 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                     const matchSearch = agentCenterSearch === '' ||
                       agent.name.toLowerCase().includes(agentCenterSearch.toLowerCase()) ||
                       agent.category.toLowerCase().includes(agentCenterSearch.toLowerCase());
-                    return matchCategory && matchSearch;
+                    const matchScene = agentCenterSceneFilter === '全部' || agent.category === agentCenterSceneFilter;
+                    const matchType =
+                      agentCenterTypeFilter === '全部' ||
+                      (agentCenterTypeFilter === '单智能体' && !agent.isMultiAgent) ||
+                      (agentCenterTypeFilter === '多智能体' && agent.isMultiAgent);
+                    return matchCategory && matchSearch && matchScene && matchType;
                   })
-                  .map(agent => (
+                  .length === 0 ? (
+                    <div style={{
+                      gridColumn: '1 / -1',
+                      textAlign: 'center',
+                      padding: '60px 20px',
+                      background: '#fafafa',
+                      borderRadius: '12px'
+                    }}>
+                      <div style={{ fontSize: '48px', marginBottom: '16px' }}>🔍</div>
+                      <h3 style={{ color: '#666', marginBottom: '8px' }}>未找到相关智能体</h3>
+                      <p style={{ color: '#999' }}>尝试修改搜索关键词或筛选条件</p>
+                    </div>
+                  ) : (
+                    allAgents
+                      .filter(agent => {
+                        const matchCategory = agentCenterCategory === '全部' || agent.category === agentCenterCategory;
+                        const matchSearch = agentCenterSearch === '' ||
+                          agent.name.toLowerCase().includes(agentCenterSearch.toLowerCase()) ||
+                          agent.category.toLowerCase().includes(agentCenterSearch.toLowerCase());
+                        const matchScene = agentCenterSceneFilter === '全部' || agent.category === agentCenterSceneFilter;
+                        const matchType =
+                          agentCenterTypeFilter === '全部' ||
+                          (agentCenterTypeFilter === '单智能体' && !agent.isMultiAgent) ||
+                          (agentCenterTypeFilter === '多智能体' && agent.isMultiAgent);
+                        return matchCategory && matchSearch && matchScene && matchType;
+                      })
+                      .map(agent => (
                     <div
                       key={agent.id}
                       style={{
@@ -2217,7 +2318,8 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                         </div>
                       </div>
                     </div>
-                  ))}
+                  ))
+                )}
               </div>
             </div>
           ) : (currentGroup || currentConversation) ? (
