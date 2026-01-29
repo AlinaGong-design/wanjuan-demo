@@ -14,7 +14,9 @@ import {
   Tooltip,
   Modal,
   Checkbox,
-  message
+  message,
+  Dropdown,
+  MenuProps,
 } from 'antd';
 import {
   ArrowLeftOutlined,
@@ -30,9 +32,14 @@ import {
   SmileOutlined,
   PlusCircleOutlined,
   DeleteOutlined,
-  SearchOutlined
+  SearchOutlined,
+  FileAddOutlined,
+  DownloadOutlined,
+  UploadOutlined,
 } from '@ant-design/icons';
 import './AgentCollaborative.css';
+import { PromptTemplateModal, PromptTemplate } from '../components/PromptTemplateModal';
+import { SaveTemplateModal } from '../components/SaveTemplateModal';
 
 const { TextArea } = Input;
 const { Panel } = Collapse;
@@ -89,6 +96,10 @@ const AgentCollaborative: React.FC = () => {
 
   // 创建子Agent提示弹窗
   const [showCreateAgentModal, setShowCreateAgentModal] = useState(false);
+
+  // 模板管理相关状态
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [showSaveTemplateModal, setShowSaveTemplateModal] = useState(false);
 
   // 可选的子Agent列表（模拟数据）
   const [availableAgents] = useState<SubAgent[]>([
@@ -172,6 +183,39 @@ const AgentCollaborative: React.FC = () => {
   // 发布
   const handlePublish = () => {
     message.success('应用已发布');
+  };
+
+  // 模板菜单项
+  const templateMenuItems: MenuProps['items'] = [
+    {
+      key: 'import',
+      label: '导入模板',
+      icon: <DownloadOutlined />,
+      onClick: () => setShowTemplateModal(true),
+    },
+    {
+      key: 'save',
+      label: '保存为模板',
+      icon: <UploadOutlined />,
+      onClick: () => setShowSaveTemplateModal(true),
+    },
+  ];
+
+  // 使用模板
+  const handleSelectTemplate = (template: PromptTemplate) => {
+    setMainAgentPrompt(template.content);
+  };
+
+  // 保存模板
+  const handleSaveTemplate = (name: string, content: string) => {
+    console.log('保存模板:', { name, content });
+    // 这里可以调用API保存模板
+  };
+
+  // 创建新模板（从模板列表Modal中点击"创建模板"）
+  const handleCreateNewTemplate = () => {
+    setShowTemplateModal(false);
+    setShowSaveTemplateModal(true);
   };
 
   return (
@@ -390,7 +434,16 @@ const AgentCollaborative: React.FC = () => {
               <div className="agent-config-item" style={{ marginTop: 16 }}>
                 <div className="config-item-label">
                   <span>提示词</span>
-                  <Button type="link" size="small">模板</Button>
+                  <Dropdown menu={{ items: templateMenuItems }} placement="bottomLeft">
+                    <Button
+                      className="add-template-button"
+                      type="link"
+                      size="small"
+                      icon={<FileAddOutlined />}
+                    >
+                      模板
+                    </Button>
+                  </Dropdown>
                 </div>
                 <TextArea
                   value={mainAgentPrompt}
@@ -654,6 +707,22 @@ const AgentCollaborative: React.FC = () => {
           </div>
         </div>
       </Modal>
+
+      {/* Prompt模板导入Modal */}
+      <PromptTemplateModal
+        visible={showTemplateModal}
+        onClose={() => setShowTemplateModal(false)}
+        onSelect={handleSelectTemplate}
+        onCreateNew={handleCreateNewTemplate}
+      />
+
+      {/* 保存为模板Modal */}
+      <SaveTemplateModal
+        visible={showSaveTemplateModal}
+        initialPrompt={mainAgentPrompt}
+        onClose={() => setShowSaveTemplateModal(false)}
+        onSave={handleSaveTemplate}
+      />
     </div>
   );
 };

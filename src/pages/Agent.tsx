@@ -12,7 +12,9 @@ import {
   Drawer,
   Tag,
   Checkbox,
-  Empty
+  Empty,
+  Dropdown,
+  MenuProps,
 } from 'antd';
 import {
   ArrowLeftOutlined,
@@ -24,9 +26,16 @@ import {
   PlusOutlined,
   RightOutlined,
   QuestionCircleOutlined,
-  SearchOutlined
+  SearchOutlined,
+  FileAddOutlined,
+  DownloadOutlined,
+  UploadOutlined,
 } from '@ant-design/icons';
 import './Agent.css';
+import { AgentSettingsDrawer } from '../components/AgentSettingsDrawer';
+import { PromptTemplateModal, PromptTemplate } from '../components/PromptTemplateModal';
+import { SaveTemplateModal } from '../components/SaveTemplateModal';
+import type { ModeConfigFormData } from '../types/agent-config.types';
 
 const { TextArea } = Input;
 const { Panel } = Collapse;
@@ -60,6 +69,13 @@ const Agent: React.FC = () => {
   const [showSkillDrawer, setShowSkillDrawer] = useState(false);
   const [selectedSkills, setSelectedSkills] = useState<Skill[]>([]);
   const [skillSearchKeyword, setSkillSearchKeyword] = useState('');
+
+  // 模式配置抽屉
+  const [showSettingsDrawer, setShowSettingsDrawer] = useState(false);
+
+  // 模板管理相关状态
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [showSaveTemplateModal, setShowSaveTemplateModal] = useState(false);
 
   // 所有已发布的技能列表（模拟数据）
   const allPublishedSkills: Skill[] = [
@@ -100,6 +116,46 @@ const Agent: React.FC = () => {
     }
   };
 
+  // 处理模式配置变化（实时保存）
+  const handleModeConfigChange = (config: ModeConfigFormData) => {
+    console.log('模式配置变化:', config);
+    // 这里可以将配置保存到状态或发送到后端
+    // 实时保存，无需关闭抽屉
+  };
+
+  // 模板菜单项
+  const templateMenuItems: MenuProps['items'] = [
+    {
+      key: 'import',
+      label: '导入模板',
+      icon: <DownloadOutlined />,
+      onClick: () => setShowTemplateModal(true),
+    },
+    {
+      key: 'save',
+      label: '保存为模板',
+      icon: <UploadOutlined />,
+      onClick: () => setShowSaveTemplateModal(true),
+    },
+  ];
+
+  // 使用模板
+  const handleSelectTemplate = (template: PromptTemplate) => {
+    setPromptText(template.content);
+  };
+
+  // 保存模板
+  const handleSaveTemplate = (name: string, content: string) => {
+    console.log('保存模板:', { name, content });
+    // 这里可以调用API保存模板
+  };
+
+  // 创建新模板（从模板列表Modal中点击"创建模板"）
+  const handleCreateNewTemplate = () => {
+    setShowTemplateModal(false);
+    setShowSaveTemplateModal(true);
+  };
+
   return (
     <div className="agent-editor-container">
       {/* 顶部栏 */}
@@ -135,7 +191,12 @@ const Agent: React.FC = () => {
 
         <div className="header-right">
           <Space size="middle">
-            <Button icon={<SettingOutlined />}>配置</Button>
+            <Button
+              icon={<SettingOutlined />}
+              onClick={() => setShowSettingsDrawer(true)}
+            >
+              Agent设置
+            </Button>
             <Button icon={<RocketOutlined />}>发布</Button>
             <Button icon={<FileTextOutlined />}>评测</Button>
             <Button icon={<SaveOutlined />}>保存</Button>
@@ -179,7 +240,14 @@ const Agent: React.FC = () => {
               </div>
 
               <div className="config-item">
-                <div className="config-item-label">提示词</div>
+                <div className="config-item-label">
+                  提示词
+                  <Dropdown menu={{ items: templateMenuItems }} placement="bottomLeft">
+                    <Button type="link" size="small" icon={<FileAddOutlined />}>
+                      模板
+                    </Button>
+                  </Dropdown>
+                </div>
                 <div className="config-item-content">
                   <TextArea
                     value={promptText}
@@ -463,6 +531,29 @@ const Agent: React.FC = () => {
           </Button>
         </div>
       </Drawer>
+
+      {/* Agent设置抽屉 */}
+      <AgentSettingsDrawer
+        visible={showSettingsDrawer}
+        onClose={() => setShowSettingsDrawer(false)}
+        onChange={handleModeConfigChange}
+      />
+
+      {/* Prompt模板导入Modal */}
+      <PromptTemplateModal
+        visible={showTemplateModal}
+        onClose={() => setShowTemplateModal(false)}
+        onSelect={handleSelectTemplate}
+        onCreateNew={handleCreateNewTemplate}
+      />
+
+      {/* 保存为模板Modal */}
+      <SaveTemplateModal
+        visible={showSaveTemplateModal}
+        initialPrompt={promptText}
+        onClose={() => setShowSaveTemplateModal(false)}
+        onSave={handleSaveTemplate}
+      />
     </div>
   );
 };
