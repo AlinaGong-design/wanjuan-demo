@@ -191,12 +191,6 @@ const Agent: React.FC = () => {
 
         <div className="header-right">
           <Space size="middle">
-            <Button
-              icon={<SettingOutlined />}
-              onClick={() => setShowSettingsDrawer(true)}
-            >
-              Agent设置
-            </Button>
             <Button icon={<RocketOutlined />}>发布</Button>
             <Button icon={<FileTextOutlined />}>评测</Button>
             <Button icon={<SaveOutlined />}>保存</Button>

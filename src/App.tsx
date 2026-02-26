@@ -15,6 +15,9 @@ import Model from './pages/Model';
 import Evaluation from './pages/Evaluation';
 import System from './pages/System';
 import Frontend from './pages/Frontend';
+import Channels from './pages/Channels';
+import OpenClawIM from './pages/OpenClaw';
+import OpenClawInstances from './pages/OpenClawInstances';
 import './App.css';
 
 type PageType =
@@ -32,7 +35,11 @@ type PageType =
   | 'model'
   | 'evaluation'
   | 'system'
-  | 'frontend';
+  | 'frontend'
+  | 'channels'
+  | 'openclaw'
+  | 'openclaw-instances'
+  | 'openclaw-editor';
 
 function App() {
   const [currentPage, setCurrentPage] = useState<PageType>('home');
@@ -41,6 +48,8 @@ function App() {
   const [editorMode, setEditorMode] = useState<'create' | 'edit'>('create');
   const [agentType, setAgentType] = useState<'autonomous' | 'collaborative'>('autonomous');
   const [editingAgentId, setEditingAgentId] = useState<string | undefined>(undefined);
+  const [editingOpenClawId, setEditingOpenClawId] = useState<string | undefined>(undefined);
+  const [openClawEditorMode, setOpenClawEditorMode] = useState<'create' | 'edit'>('create');
 
   // 监听 hash 变化
   useEffect(() => {
@@ -72,7 +81,15 @@ function App() {
           setEditorMode(mode);
           setEditingSkillId(skillId);
           setCurrentPage('skill-editor');
-        } else if (['home', 'agent', 'knowledge', 'skill', 'workflow', 'mcp', 'api', 'components', 'model', 'evaluation', 'system'].includes(path)) {
+        } else if (path === 'openclaw-editor') {
+          const searchParams = new URLSearchParams(params);
+          const mode = searchParams.get('mode') as 'create' | 'edit' || 'create';
+          const instanceId = searchParams.get('id') || undefined;
+
+          setOpenClawEditorMode(mode);
+          setEditingOpenClawId(instanceId);
+          setCurrentPage('openclaw-editor');
+        } else if (['home', 'agent', 'knowledge', 'skill', 'workflow', 'mcp', 'api', 'components', 'model', 'evaluation', 'system', 'channels', 'openclaw', 'openclaw-instances'].includes(path)) {
           setCurrentPage(path as PageType);
         }
       }
@@ -113,6 +130,18 @@ function App() {
 
   const handleBackToSkillList = () => {
     window.location.hash = 'skill';
+  };
+
+  const handleCreateOpenClawInstance = () => {
+    window.location.hash = 'openclaw-editor?mode=create';
+  };
+
+  const handleEditOpenClawInstance = (instanceId: string) => {
+    window.location.hash = `openclaw-editor?mode=edit&id=${instanceId}`;
+  };
+
+  const handleBackToOpenClawInstances = () => {
+    window.location.hash = 'openclaw-instances';
   };
 
   const handleTrySkill = (skillId: string, skillName: string, skillIcon: string) => {
@@ -189,6 +218,15 @@ function App() {
         return <Evaluation />;
       case 'system':
         return <System />;
+      case 'channels':
+        return <Channels />;
+      case 'openclaw-instances':
+        return (
+          <OpenClawInstances
+            onCreateInstance={handleCreateOpenClawInstance}
+            onEditInstance={handleEditOpenClawInstance}
+          />
+        );
       case 'frontend':
         return <Frontend />;
       default:
@@ -198,6 +236,14 @@ function App() {
 
   if (currentPage === 'frontend') {
     return <Frontend onBackToAdmin={handleBackToAdmin} selectedSkill={selectedSkill} />;
+  }
+
+  if (currentPage === 'openclaw') {
+    return (
+      <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
+        <OpenClawIM />
+      </div>
+    );
   }
 
   if (currentPage === 'agent-editor') {
@@ -231,11 +277,25 @@ function App() {
     );
   }
 
+  if (currentPage === 'openclaw-editor') {
+    return (
+      <div style={{ height: '100vh', background: '#fff' }}>
+        <SkillEditor
+          skillId={editingOpenClawId}
+          mode={openClawEditorMode}
+          onBack={handleBackToOpenClawInstances}
+          context="openclaw"
+        />
+      </div>
+    );
+  }
+
   return (
     <MainLayout
       currentPage={currentPage}
       onMenuClick={handlePageChange}
       onFrontendClick={handleFrontendClick}
+      onOpenClawClick={() => { window.location.hash = 'openclaw'; }}
     >
       {renderPage()}
     </MainLayout>

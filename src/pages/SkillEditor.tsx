@@ -71,9 +71,10 @@ interface SkillEditorProps {
   mode?: 'create' | 'edit';
   onBack?: () => void;
   onTrySkill?: (skillId: string, skillName: string, skillIcon: string) => void;
+  context?: 'skill' | 'openclaw';
 }
 
-const SkillEditor: React.FC<SkillEditorProps> = ({ skillId, mode = 'create', onBack, onTrySkill }) => {
+const SkillEditor: React.FC<SkillEditorProps> = ({ skillId, mode = 'create', onBack, onTrySkill, context = 'skill' }) => {
   // 对话历史
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -2472,7 +2473,73 @@ Alina
                       </div>
                     </div>
                   ) : activeTab === 'preview' && activeFileKey === 'preview' ? (
-                    showPreviewChat ? (
+                    context === 'openclaw' ? (
+                      // OpenClaw 实例预览 - 服务预览留白 mock
+                      <div style={{
+                        width: '100%',
+                        height: '100%',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        background: '#fafafa',
+                        padding: '48px 32px',
+                      }}>
+                        <div style={{
+                          width: '100%',
+                          maxWidth: '520px',
+                          background: '#fff',
+                          borderRadius: '16px',
+                          border: '1.5px dashed #c7c7ff',
+                          padding: '48px 40px',
+                          textAlign: 'center',
+                          boxShadow: '0 2px 12px rgba(99,102,241,0.06)',
+                        }}>
+                          <div style={{ fontSize: '56px', marginBottom: '20px' }}>🤖</div>
+                          <h2 style={{ fontSize: '22px', fontWeight: 700, color: '#1a1a1a', marginBottom: '12px' }}>
+                            OpenClaw 服务预览
+                          </h2>
+                          <p style={{ fontSize: '14px', color: '#888', lineHeight: '1.8', marginBottom: '32px' }}>
+                            此处将展示 OpenClaw 实例对应的服务页面。<br />
+                            OpenClaw 服务提供即时通讯能力，支持多渠道消息接入、<br />
+                            智能体对话及多 Bot 管理。
+                          </p>
+                          <div style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '10px',
+                            textAlign: 'left',
+                            background: '#f5f5ff',
+                            borderRadius: '10px',
+                            padding: '20px 24px',
+                            marginBottom: '24px',
+                          }}>
+                            <div style={{ fontSize: '13px', color: '#6366F1', fontWeight: 600, marginBottom: '6px' }}>
+                              功能说明（Mock）
+                            </div>
+                            {[
+                              '📡  多渠道接入：支持钉钉、飞书、企业微信、Telegram 等',
+                              '🤖  多 Bot 管理：绑定不同智能体到不同渠道',
+                              '💬  实时对话：提供即时通讯 IM 界面',
+                              '🔐  权限管理：支持按用户/群组配置访问权限',
+                            ].map((item, idx) => (
+                              <div key={idx} style={{ fontSize: '13px', color: '#555', padding: '4px 0' }}>
+                                {item}
+                              </div>
+                            ))}
+                          </div>
+                          <div style={{
+                            fontSize: '12px',
+                            color: '#bbb',
+                            background: '#f9f9f9',
+                            borderRadius: '6px',
+                            padding: '10px 16px',
+                          }}>
+                            实际服务页面将在 OpenClaw 部署后可用
+                          </div>
+                        </div>
+                      </div>
+                    ) : showPreviewChat ? (
                       // 预览CUI对话界面
                       <div style={{
                         width: '100%',

@@ -14,7 +14,10 @@ import {
   SettingOutlined,
   BellOutlined,
   UserOutlined,
-  CloudServerOutlined
+  CloudServerOutlined,
+  DeploymentUnitOutlined,
+  BranchesOutlined,
+  CustomerServiceOutlined,
 } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
 
@@ -27,6 +30,18 @@ const items: MenuItem[] = [
     key: 'home',
     icon: <HomeOutlined />,
     label: '首页',
+  },
+  {
+    key: 'personal-assistant-group',
+    icon: <CustomerServiceOutlined />,
+    label: '个人助理',
+    children: [
+      {
+        key: 'openclaw-instances',
+        icon: <BranchesOutlined />,
+        label: 'OpenClaw',
+      },
+    ],
   },
   {
     key: 'agent',
@@ -92,9 +107,10 @@ interface MainLayoutProps {
   currentPage?: string;
   onMenuClick?: (key: string) => void;
   onFrontendClick?: () => void;
+  onOpenClawClick?: () => void;
 }
 
-const MainLayout: React.FC<MainLayoutProps> = ({ children, currentPage = 'home', onMenuClick, onFrontendClick }) => {
+const MainLayout: React.FC<MainLayoutProps> = ({ children, currentPage = 'home', onMenuClick, onFrontendClick, onOpenClawClick }) => {
   const [selectedKey, setSelectedKey] = useState(currentPage);
   const [openKeys, setOpenKeys] = useState<string[]>([]);
 

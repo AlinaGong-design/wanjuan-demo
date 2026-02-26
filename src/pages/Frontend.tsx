@@ -1743,10 +1743,12 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
         style={{
           background: '#fff',
           borderRight: '1px solid #f0f0f0',
-          overflow: 'auto'
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column'
         }}
       >
-        <div style={{ padding: '16px' }}>
+        <div style={{ padding: '16px', flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <div style={{
@@ -1975,7 +1977,7 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                 </div>
               )} */}
 
-              <div>
+              <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                 <div style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -1985,7 +1987,7 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                   <span style={{ fontSize: '12px', color: '#999' }}>历史对话</span>
                   <ReloadOutlined style={{ fontSize: '12px', color: '#999', cursor: 'pointer' }} />
                 </div>
-                <div style={{ maxHeight: 'calc(100vh - 500px)', overflowY: 'auto' }}>
+                <div style={{ flex: 1, overflowY: 'auto' }}>
                   {chatHistory.map(chat => (
                     <div
                       key={chat.id}
@@ -2008,11 +2010,6 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                         gap: '6px'
                       }}>
                         <span>{chat.title}</span>
-                        {chat.isMultiAgent && (
-                          <Tag color="#6366F1" style={{ margin: 0, fontSize: '11px', padding: '0 6px' }}>
-                            多智能体
-                          </Tag>
-                        )}
                       </div>
                       {chat.subtitle && (
                         <div style={{ fontSize: '12px', color: '#999' }}>
@@ -2024,29 +2021,43 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                 </div>
               </div>
 
-              <div
-                onClick={onBackToAdmin}
-                style={{
-                  position: 'absolute',
-                  bottom: '16px',
-                  left: '16px',
-                  right: '16px',
-                  padding: '12px',
-                  borderTop: '1px solid #f0f0f0',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  transition: 'background 0.3s'
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.background = '#f5f5f5'}
-                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-              >
-                <SmileOutlined style={{ fontSize: '16px' }} />
-                <span style={{ fontSize: '14px' }}>智能体管理</span>
-              </div>
             </>
           )}
+        </div>
+        <div style={{ borderTop: '1px solid #f0f0f0', flexShrink: 0 }}>
+          <div
+            onClick={() => { window.location.hash = 'openclaw'; }}
+            style={{
+              padding: '12px 16px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              transition: 'background 0.3s'
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.background = '#f5f5f5'}
+            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+          >
+            <span style={{ fontSize: '16px' }}>🦞</span>
+            <span style={{ fontSize: '14px' }}>OpenClaw</span>
+          </div>
+          <div
+            onClick={onBackToAdmin}
+            style={{
+              padding: '12px 16px',
+              borderTop: '1px solid #f0f0f0',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              transition: 'background 0.3s'
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.background = '#f5f5f5'}
+            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+          >
+            <SmileOutlined style={{ fontSize: '16px' }} />
+            <span style={{ fontSize: '14px' }}>智能体管理</span>
+          </div>
         </div>
       </Sider>
 
