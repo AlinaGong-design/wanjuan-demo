@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { SkillImportContent } from './Skill';
 import {
   Layout,
   Button,
@@ -11,7 +12,12 @@ import {
   Tooltip,
   Switch,
   Tabs,
-  Dropdown
+  Dropdown,
+  Select,
+  Drawer,
+  Timeline,
+  Tag,
+  Divider,
 } from 'antd';
 import {
   SendOutlined,
@@ -37,12 +43,242 @@ import {
   CopyOutlined,
   EyeInvisibleOutlined,
   DeleteOutlined,
-  SaveOutlined
+  SaveOutlined,
+  HistoryOutlined,
+  TagOutlined,
+  RollbackOutlined,
+  FileTextOutlined,
 } from '@ant-design/icons';
 import type { DataNode } from 'antd/es/tree';
 import './SkillEditor.css';
 
 const { TextArea } = Input;
+
+// ─── 版本控制类型 ─────────────────────────────────────────────────────────────
+
+type VisibilityScope = 'private' | 'team' | 'public';
+
+interface SkillVersion {
+  versionId: string;
+  version: string;
+  changelog: string;
+  publishedAt: string;
+  publishedBy: string;
+  scope: VisibilityScope;
+  snapshot: {
+    name: string;
+    desc: string;
+  };
+}
+
+interface SkillHistoryEvent {
+  id: string;
+  kind: 'save' | 'publish';
+  time: string;
+  user: string;
+  desc: string;
+  version?: SkillVersion;
+}
+
+function nextSkillVersion(last: string, bump: 'patch' | 'minor' | 'major'): string {
+  const m = last.match(/^v?(\d+)\.(\d+)\.(\d+)$/);
+  if (!m) return 'v1.0.0';
+  let [, maj, min, pat] = m.map(Number);
+  if (bump === 'major') { maj++; min = 0; pat = 0; }
+  else if (bump === 'minor') { min++; pat = 0; }
+  else { pat++; }
+  return `v${maj}.${min}.${pat}`;
+}
+
+const nowStr = () => new Date().toISOString().slice(0, 19).replace('T', ' ');
+
+const SCOPE_LABELS: Record<VisibilityScope, string> = {
+  private: '仅自己',
+  team: '团队内',
+  public: '公开',
+};
+
+// 初始演示历史（edit 模式）
+const DEMO_SKILL_HISTORY: SkillHistoryEvent[] = [
+  {
+    id: 'h1', kind: 'publish', time: '2026-01-10 10:00:00', user: '系统', desc: 'v1.0.0',
+    version: {
+      versionId: 'v1.0.0', version: 'v1.0.0', changelog: '首次发布',
+      publishedAt: '2026-01-10 10:00', publishedBy: '系统', scope: 'team',
+      snapshot: { name: '写作助手', desc: '智能写作辅助技能' },
+    },
+  },
+  { id: 'h2', kind: 'save', time: '2026-01-15 14:00:00', user: '系统', desc: '优化提示词配置' },
+  {
+    id: 'h3', kind: 'publish', time: '2026-01-20 11:00:00', user: '系统', desc: 'v1.1.0',
+    version: {
+      versionId: 'v1.1.0', version: 'v1.1.0', changelog: '新增多语言支持',
+      publishedAt: '2026-01-20 11:00', publishedBy: '系统', scope: 'team',
+      snapshot: { name: '写作助手', desc: '多语言智能写作辅助技能' },
+    },
+  },
+];
+
+// ─── 历史版本抽屉 ─────────────────────────────────────────────────────────────
+
+const SkillHistoryDrawer: React.FC<{
+  open: boolean;
+  onClose: () => void;
+  history: SkillHistoryEvent[];
+  previewVersion: SkillVersion | null;
+  onEnterPreview: (ver: SkillVersion) => void;
+  onExitPreview: () => void;
+}> = ({ open, onClose, history, previewVersion, onEnterPreview, onExitPreview }) => {
+  const [rollbackTarget, setRollbackTarget] = useState<SkillVersion | null>(null);
+  const isPreview = !!previewVersion;
+
+  const handleRollbackConfirm = () => {
+    if (!rollbackTarget) return;
+    message.success(`已回滚至 ${rollbackTarget.version}`);
+    setRollbackTarget(null);
+    onClose();
+  };
+
+  return (
+    <>
+      <Drawer
+        title={
+          <Space>
+            <HistoryOutlined />
+            <span>历史版本</span>
+            <Tag style={{ fontSize: 11, margin: 0 }}>{history.length} 条记录</Tag>
+          </Space>
+        }
+        placement="right"
+        width={440}
+        open={open}
+        onClose={onClose}
+        styles={{ body: { padding: '16px 20px' } }}
+      >
+        {/* 草稿入口 */}
+        <div
+          onClick={isPreview ? () => { onExitPreview(); onClose(); } : undefined}
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            gap: 8, padding: '10px 14px', marginBottom: 4, borderRadius: 8,
+            cursor: isPreview ? 'pointer' : 'default',
+            background: !isPreview ? '#f0fdf4' : '#f0f9ff',
+            border: !isPreview ? '1.5px solid #86efac' : '1px solid #bae6fd',
+          }}
+        >
+          <Space size={6}>
+            <FileTextOutlined style={{ color: isPreview ? '#0ea5e9' : '#16a34a' }} />
+            <span style={{ fontSize: 13, color: isPreview ? '#0369a1' : '#15803d', fontWeight: 500 }}>
+              草稿（当前编辑版本）
+            </span>
+          </Space>
+          {!isPreview
+            ? <Tag color="green" style={{ fontSize: 11, margin: 0 }}>当前</Tag>
+            : <span style={{ fontSize: 12, color: '#0369a1' }}>点击返回草稿</span>
+          }
+        </div>
+
+        <Divider style={{ margin: '12px 0 16px', fontSize: 12, color: '#94a3b8' }}>
+          {history.length} 条历史记录
+        </Divider>
+
+        <Timeline
+          items={[...history].reverse().map(ev => ({
+            dot: ev.kind === 'publish'
+              ? <TagOutlined style={{ color: '#6366F1', fontSize: 14 }} />
+              : <SaveOutlined style={{ color: '#94a3b8', fontSize: 12 }} />,
+            color: ev.kind === 'publish' ? '#6366F1' : '#cbd5e1',
+            children: (
+              <div style={{ marginBottom: 4 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3, flexWrap: 'wrap' }}>
+                  {ev.kind === 'publish' ? (
+                    <>
+                      <Tag color="purple" style={{ margin: 0, fontFamily: 'monospace', fontSize: 12, fontWeight: 600 }}>
+                        {ev.desc}
+                      </Tag>
+                      <Tag color="blue" style={{ margin: 0, fontSize: 11 }}>正式发布</Tag>
+                    </>
+                  ) : (
+                    <>
+                      <span style={{ fontSize: 12, color: '#475569', fontWeight: 500 }}>{ev.desc}</span>
+                      <Tag style={{ margin: 0, fontSize: 11, color: '#64748b', borderColor: '#cbd5e1', background: '#f8fafc' }}>草稿保存</Tag>
+                    </>
+                  )}
+                </div>
+                <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>{ev.user} · {ev.time}</div>
+                {ev.kind === 'publish' && ev.version && (
+                  <>
+                    {ev.version.changelog && (
+                      <div style={{ fontSize: 12, color: '#64748b', fontStyle: 'italic', marginBottom: 4, paddingLeft: 8, borderLeft: '2px solid #e2e8f0', lineHeight: 1.5 }}>
+                        {ev.version.changelog}
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 6 }}>
+                      <span style={{ fontSize: 11, color: '#94a3b8' }}>公开范围：</span>
+                      <Tag style={{ fontSize: 11, margin: 0 }}>{SCOPE_LABELS[ev.version.scope]}</Tag>
+                    </div>
+                    <Space size={6}>
+                      <Button
+                        size="small"
+                        icon={<EyeOutlined />}
+                        type={isPreview && previewVersion?.versionId === ev.version.versionId ? 'primary' : 'default'}
+                        onClick={() => { onEnterPreview(ev.version!); onClose(); }}
+                      >
+                        查看版本
+                      </Button>
+                      <Button size="small" icon={<RollbackOutlined />} onClick={() => setRollbackTarget(ev.version!)}>
+                        回滚
+                      </Button>
+                    </Space>
+                  </>
+                )}
+              </div>
+            ),
+          }))}
+        />
+      </Drawer>
+
+      {/* 回滚确认弹窗 */}
+      <Modal
+        title={`回滚至 ${rollbackTarget?.version} 版本`}
+        open={!!rollbackTarget}
+        onCancel={() => setRollbackTarget(null)}
+        footer={
+          <Space>
+            <Button onClick={() => setRollbackTarget(null)}>取消</Button>
+            <Button type="primary" onClick={handleRollbackConfirm}
+              style={{ background: '#1a1a1a', borderColor: '#1a1a1a', borderRadius: 8 }}>
+              回滚
+            </Button>
+          </Space>
+        }
+        width={480}
+      >
+        {rollbackTarget && (
+          <div style={{ padding: '4px 0 8px' }}>
+            <div style={{ border: '1px solid #e8e8e8', borderRadius: 8, padding: '14px 16px', marginBottom: 20, background: '#fafafa' }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 6 }}>
+                <span style={{ fontWeight: 600, fontSize: 14, color: '#111' }}>回滚版本 {rollbackTarget.version}</span>
+                <span style={{ fontSize: 13, color: '#999' }}>{rollbackTarget.publishedBy} · {rollbackTarget.publishedAt}</span>
+              </div>
+              <div style={{ fontSize: 13, color: '#666', lineHeight: 1.6 }}>
+                {rollbackTarget.changelog || `将技能恢复至 ${rollbackTarget.version} 版本配置。`}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontWeight: 600, fontSize: 14, color: '#111', marginBottom: 10 }}>此操作会：</div>
+              <ul style={{ margin: 0, paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <li style={{ fontSize: 14, color: '#333', lineHeight: 1.6 }}>技能配置恢复至选中的 {rollbackTarget.version} 版本状态</li>
+                <li style={{ fontSize: 14, color: '#333', lineHeight: 1.6 }}>撤销该版本之后的所有未发布更改</li>
+                <li style={{ fontSize: 14, color: '#333', lineHeight: 1.6 }}>历史记录会保留，可随时回滚到其他版本</li>
+              </ul>
+            </div>
+          </div>
+        )}
+      </Modal>
+    </>
+  );
+};
 
 interface Message {
   id: string;
@@ -69,18 +305,20 @@ interface EnvVariable {
 interface SkillEditorProps {
   skillId?: string;
   mode?: 'create' | 'edit';
+  importFileName?: string;
   onBack?: () => void;
   onTrySkill?: (skillId: string, skillName: string, skillIcon: string) => void;
+  onImportSkill?: (fileName: string) => void;
   context?: 'skill' | 'openclaw';
 }
 
-const SkillEditor: React.FC<SkillEditorProps> = ({ skillId, mode = 'create', onBack, onTrySkill, context = 'skill' }) => {
+const SkillEditor: React.FC<SkillEditorProps> = ({ skillId, mode = 'create', importFileName: importFileNameProp = '', onBack, onTrySkill, onImportSkill, context = 'skill' }) => {
   // 对话历史
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
       role: 'assistant',
-      content: '你好！我是技能创建助手。请告诉我你想创建什么样的技能？例如：写作助手、数据分析、代码审查等。',
+      content: '你好！我是技能创建助手，请告诉我你想创建什么样的技能！例如：写作助手、数据分析、代码审查等。您也可以上传 Skill 文件包进行技能创建！',
       timestamp: '10:00'
     }
   ]);
@@ -741,6 +979,22 @@ Alina
   const [deployedSkillId, setDeployedSkillId] = useState<string>('');
   const [deployedSkillName, setDeployedSkillName] = useState<string>('写作助手');
 
+  // 版本历史与预览
+  const [skillHistory, setSkillHistory] = useState<SkillHistoryEvent[]>(mode === 'edit' ? DEMO_SKILL_HISTORY : []);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [previewVersion, setPreviewVersion] = useState<SkillVersion | null>(null);
+  const isPreview = !!previewVersion;
+
+  // 已发布状态管理
+  const [isPublished, setIsPublished] = useState(mode === 'edit');
+  const [isDirtyAfterPublish, setIsDirtyAfterPublish] = useState(false);
+
+  // 版本发布弹窗状态
+  const [showPublishModal, setShowPublishModal] = useState(false);
+  const [publishVersionNum, setPublishVersionNum] = useState('v1.0.0');
+  const [publishChangelog, setPublishChangelog] = useState('');
+  const [publishScope, setPublishScope] = useState<string | undefined>(undefined);
+
   // 终端相关状态
   const [showTerminal, setShowTerminal] = useState(false);
   const [showFileExplorer, setShowFileExplorer] = useState(true);
@@ -828,7 +1082,7 @@ Alina
   const [internetSearch, setInternetSearch] = useState(false);
   const [showConfigPanel, setShowConfigPanel] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
-  const skillPackageInputRef = React.useRef<HTMLInputElement>(null);
+  const skillPkgInputRef = React.useRef<HTMLInputElement>(null);
 
   // 可调整宽度相关状态
   const [leftPanelWidth, setLeftPanelWidth] = useState(400);
@@ -1112,7 +1366,11 @@ Alina
       [activeFileKey]: value
     });
     // 实时自动保存提示
-    message.success({ content: '已自动保存', duration: 1, key: 'autosave' });
+    message.success({ content: '已自动保存为草稿', duration: 1, key: 'autosave' });
+    // 已发布后修改，自动变为草稿状态
+    if (isPublished && !isDirtyAfterPublish) {
+      setIsDirtyAfterPublish(true);
+    }
   };
 
   // 环境变量相关函数
@@ -1177,14 +1435,37 @@ Alina
     setNewEnvVisible(false);
   };
 
-  // 部署
+  // 部署 - 打开单步发布弹窗
   const handleDeploy = () => {
-    setShowDeployConfirm(true);
+    setPublishChangelog('');
+    setPublishScope(undefined);
+    // 自动计算下一个版本号
+    const lastPublish = [...skillHistory].reverse().find(h => h.kind === 'publish');
+    if (lastPublish?.version?.version) {
+      const parts = lastPublish.version.version.replace('v', '').split('.').map(Number);
+      parts[2] = (parts[2] || 0) + 1;
+      setPublishVersionNum(`v${parts.join('.')}`);
+    } else {
+      setPublishVersionNum('v1.0.0');
+    }
+    setShowPublishModal(true);
+  };
+
+  // 确认发布
+  const handleConfirmPublish = () => {
+    if (!publishVersionNum.trim()) {
+      message.warning('请填写版本号');
+      return;
+    }
+    setShowPublishModal(false);
+    handleConfirmDeploy();
   };
 
   // 确认部署
   const handleConfirmDeploy = () => {
     setShowDeployConfirm(false);
+    setIsPublished(true);
+    setIsDirtyAfterPublish(false);
 
     // 模拟部署过程
     const deployId = skillId || `skill-${Date.now()}`;
@@ -1202,7 +1483,7 @@ Alina
     }
 
     setTimeout(() => {
-      setShowDeploySuccess(true);
+      message.success({ content: '发布成功！', duration: 3, key: 'publish-success' });
     }, 500);
   };
 
@@ -1391,21 +1672,6 @@ Alina
     }
   };
 
-  // 处理技能包上传
-  const handleSkillPackageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      const validExtensions = ['.zip', '.skill'];
-      const fileExtension = file.name.substring(file.name.lastIndexOf('.'));
-      if (validExtensions.includes(fileExtension)) {
-        message.success(`技能包 ${file.name} 上传成功`);
-        // TODO: 实现技能包解析逻辑
-      } else {
-        message.error('请上传 .zip 或 .skill 格式的文件');
-      }
-    }
-  };
-
   // 生成配置
   const handleGenerateConfig = () => {
     setShowConfigPanel(!showConfigPanel);
@@ -1436,65 +1702,87 @@ Alina
         </div>
         <div className="status-bar-right">
           <Space size="middle">
-            <Tooltip title="切换文件目录">
-              <Button
-                icon={<FolderViewOutlined />}
-                onClick={() => setShowFileExplorer(!showFileExplorer)}
-                style={{
-                  background: showFileExplorer ? '#f0f0f0' : 'transparent'
-                }}
-              />
-            </Tooltip>
-            <Tooltip title="环境变量">
-              <Button
-                icon={<GlobalOutlined />}
-                onClick={() => setActiveTab('env')}
-                style={{
-                  background: activeTab === 'env' ? '#f0f0f0' : 'transparent'
-                }}
-              />
-            </Tooltip>
-            <Button
-              icon={<CodeOutlined />}
-              onClick={() => setShowTerminal(!showTerminal)}
-              style={{
-                background: showTerminal ? '#f0f0f0' : 'transparent'
-              }}
-            >
-              终端
-            </Button>
-            <Button
-              type="primary"
-              icon={<SaveOutlined />}
-              onClick={() => {
-                message.success('保存成功');
-              }}
-              style={{
-                background: 'white',
-                color: '#6366F1',
-                border: '1px solid #ccc',
-                // border: 'none'
-              }}
-            >
-              保存
-            </Button>
-            <Button
-              type="primary"
-              icon={<CloudUploadOutlined />}
-              onClick={handleDeploy}
-              style={{
-                background: 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)',
-                border: 'none'
-              }}
-            >
-              发布
-            </Button>
+            {skillHistory.length > 0 && (
+              <Button icon={<HistoryOutlined />} onClick={() => setHistoryOpen(true)} size="small">
+                历史版本
+              </Button>
+            )}
+            {!isPreview && (
+              <>
+                <Tooltip title="切换文件目录">
+                  <Button
+                    icon={<FolderViewOutlined />}
+                    onClick={() => setShowFileExplorer(!showFileExplorer)}
+                    style={{
+                      background: showFileExplorer ? '#f0f0f0' : 'transparent'
+                    }}
+                  />
+                </Tooltip>
+                <Tooltip title="环境变量">
+                  <Button
+                    icon={<GlobalOutlined />}
+                    onClick={() => setActiveTab('env')}
+                    style={{
+                      background: activeTab === 'env' ? '#f0f0f0' : 'transparent'
+                    }}
+                  />
+                </Tooltip>
+                <Button
+                  icon={<CodeOutlined />}
+                  onClick={() => setShowTerminal(!showTerminal)}
+                  style={{
+                    background: showTerminal ? '#f0f0f0' : 'transparent'
+                  }}
+                >
+                  终端
+                </Button>
+                <Button
+                  type="primary"
+                  icon={<CloudUploadOutlined />}
+                  onClick={handleDeploy}
+                  disabled={isPublished && !isDirtyAfterPublish}
+                  style={{
+                    background: (isPublished && !isDirtyAfterPublish) ? undefined : 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)',
+                    border: 'none'
+                  }}
+                >
+                  {isPublished && !isDirtyAfterPublish ? '已发布' : isDirtyAfterPublish ? '发布新版本' : '发布'}
+                </Button>
+              </>
+            )}
           </Space>
         </div>
       </div>
 
+      {/* 历史版本预览 Banner */}
+      {isPreview && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '10px 24px', background: '#fef3c7', border: '1px solid #fcd34d',
+          borderBottom: '1px solid #fcd34d', fontSize: 13, flexShrink: 0,
+        }}>
+          <Space>
+            <EyeOutlined style={{ color: '#d97706' }} />
+            <span style={{ color: '#92400e', fontWeight: 500 }}>
+              当前浏览的是历史版本{' '}
+              <Tag color="orange" style={{ fontFamily: 'monospace' }}>{previewVersion!.version}</Tag>
+              发布于 {previewVersion!.publishedAt}，由 {previewVersion!.publishedBy} 提交
+            </span>
+          </Space>
+          <Button icon={<CloseOutlined />} onClick={() => setPreviewVersion(null)} size="small">退出预览</Button>
+        </div>
+      )}
+
       {/* 主体区域 */}
       <Layout style={{ height: 'calc(100vh - 64px)', display: 'flex', flexDirection: 'row' }}>
+        {importFileNameProp ? (
+          /* ── 导入模式：全宽展示导入可视化 ── */
+          <SkillImportContent
+            fileName={importFileNameProp}
+            onImported={(skillName) => { message.success(`「${skillName}」已导入草稿箱`); }}
+          />
+        ) : (
+        <>
           {/* 预览页面的原有内容 */}
         <div style={{ position: 'relative', width: leftPanelWidth, background: '#fafafa', borderRight: '1px solid #e8e8e8', display: 'flex', flexShrink: 0 }}>
           <div style={{ height: '100%', display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
@@ -1558,7 +1846,24 @@ Alina
                         lineHeight: '1.6',
                         boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
                       }}>
-                        {msg.content}
+                        {msg.id === '1' && msg.role === 'assistant' ? (
+                          <span>
+                            你好！我是技能创建助手，请告诉我你想创建什么样的技能！例如：写作助手、数据分析、代码审查等。您也可以
+                            <span
+                              onClick={() => skillPkgInputRef.current?.click()}
+                              style={{
+                                color: '#6366F1',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                              }}
+                              onMouseEnter={e => (e.currentTarget.style.textDecoration = 'underline')}
+                              onMouseLeave={e => (e.currentTarget.style.textDecoration = 'none')}
+                            >
+                              上传 Skill 文件包
+                            </span>
+                            {' '}进行技能创建！
+                          </span>
+                        ) : msg.content}
                       </div>
                       <div style={{
                         fontSize: '12px',
@@ -1747,33 +2052,6 @@ Alina
                       </div>
                     </Tooltip>
 
-                    <Tooltip title="上传 Skill 文件包(.zip/.skill)">
-                      <div
-                        onClick={() => skillPackageInputRef.current?.click()}
-                        style={{
-                          width: '36px',
-                          height: '36px',
-                          borderRadius: '50%',
-                          border: '1px solid #e0e0e0',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          cursor: 'pointer',
-                          transition: 'all 0.3s',
-                          background: '#fff'
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.borderColor = '#6366F1';
-                          e.currentTarget.style.color = '#6366F1';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.borderColor = '#e0e0e0';
-                          e.currentTarget.style.color = '#000';
-                        }}
-                      >
-                        <FolderOpenOutlined style={{ fontSize: '16px' }} />
-                      </div>
-                    </Tooltip>
                   </div>
 
                   {/* 右侧发送按钮 */}
@@ -1797,19 +2075,31 @@ Alina
                 </div>
               </div>
 
-              {/* 隐藏的��件输入 */}
+              {/* 隐藏的文件输入 */}
               <input
                 ref={fileInputRef}
                 type="file"
                 style={{ display: 'none' }}
                 onChange={handleFileUpload}
               />
+              {/* 欢迎语「上传 Skill 文件包」隐藏输入 */}
               <input
-                ref={skillPackageInputRef}
+                ref={skillPkgInputRef}
                 type="file"
                 accept=".zip,.skill"
                 style={{ display: 'none' }}
-                onChange={handleSkillPackageUpload}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    const ext = file.name.substring(file.name.lastIndexOf('.'));
+                    if (['.zip', '.skill'].includes(ext)) {
+                      if (onImportSkill) onImportSkill(file.name);
+                    } else {
+                      message.error('请上传 .zip 或 .skill 格式的文件');
+                    }
+                  }
+                  e.target.value = '';
+                }}
               />
             </div>
           </div>
@@ -2787,14 +3077,6 @@ Alina
                               alignItems: 'center'
                             }}>
                               <div style={{ display: 'flex', gap: '12px' }}>
-                                <Tooltip title="提及">
-                                  <Button
-                                    type="text"
-                                    icon={<span style={{ fontSize: '16px', fontWeight: 'bold' }}>@</span>}
-                                    size="small"
-                                    style={{ color: '#666' }}
-                                  />
-                                </Tooltip>
                                 <Tooltip title="附件">
                                   <Button
                                     type="text"
@@ -2998,6 +3280,7 @@ Alina
                     <TextArea
                       value={fileContents[activeFileKey] || ''}
                       onChange={(e) => handleContentChange(e.target.value)}
+                      disabled={isPreview}
                       style={{
                         width: '100%',
                         height: '100%',
@@ -3006,7 +3289,8 @@ Alina
                         fontSize: '14px',
                         lineHeight: '1.6',
                         padding: '16px',
-                        resize: 'none'
+                        resize: 'none',
+                        background: isPreview ? '#fafafa' : '#fff',
                       }}
                     />
                   ) : null}
@@ -3097,30 +3381,103 @@ Alina
             )}
           </div>
         </div>
+        </>
+        )}
       </Layout>
 
-      {/* 部署确认对话框 */}
+      {/* 发布新版本弹窗 */}
       <Modal
-        title="确认发布"
-        open={showDeployConfirm}
-        onOk={handleConfirmDeploy}
-        onCancel={() => setShowDeployConfirm(false)}
-        okText="确认发布"
-        cancelText="取消"
-        okButtonProps={{
-          style: {
-            background: 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)',
-            border: 'none'
-          }
-        }}
+        open={showPublishModal}
+        onCancel={() => setShowPublishModal(false)}
+        footer={null}
+        width={520}
+        closable
+        destroyOnClose
       >
-        <p>确定要发布技能 <strong>{deployedSkillName}</strong> 吗？</p>
-        <p style={{ color: '#666', fontSize: '14px' }}>发布后，该技能将可以在智能体中配置</p>
+        {/* 标题区域 */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px', marginBottom: '28px' }}>
+          <div style={{
+            width: '48px', height: '48px', borderRadius: '12px', flexShrink: 0,
+            background: 'linear-gradient(135deg, #ede9fe 0%, #ddd6fe 100%)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center'
+          }}>
+            <CloudUploadOutlined style={{ fontSize: '22px', color: '#7C3AED' }} />
+          </div>
+          <div>
+            <div style={{ fontSize: '18px', fontWeight: 600, color: '#111', marginBottom: '4px' }}>发布新版本</div>
+            <div style={{ fontSize: '13px', color: '#888' }}>发布后将生成不可变的快照。请确保代码已通过调试验证。</div>
+          </div>
+        </div>
+
+        {/* 版本号 */}
+        <div style={{ marginBottom: '20px' }}>
+          <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '8px', color: '#111' }}>
+            版本号 <span style={{ color: '#ef4444' }}>*</span>
+          </div>
+          <Input
+            value={publishVersionNum}
+            onChange={(e) => setPublishVersionNum(e.target.value)}
+            size="large"
+            style={{ borderRadius: '8px', fontSize: '15px' }}
+          />
+          <div style={{ fontSize: '12px', color: '#6366F1', marginTop: '6px' }}>
+            格式示例: v1.0.0, v2.1.3
+          </div>
+        </div>
+
+        {/* 版本说明 */}
+        <div style={{ marginBottom: '20px' }}>
+          <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '8px', color: '#111' }}>
+            版本说明 / 变更日志
+          </div>
+          <Input.TextArea
+            value={publishChangelog}
+            onChange={(e) => setPublishChangelog(e.target.value)}
+            placeholder="简要描述本次更新的内容..."
+            rows={4}
+            style={{ borderRadius: '8px', fontSize: '14px', resize: 'none' }}
+          />
+        </div>
+
+        {/* 公开范围 */}
+        <div style={{ marginBottom: '32px' }}>
+          <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '4px', color: '#111' }}>
+            公开范围 <span style={{ fontWeight: 400, color: '#888', fontSize: '13px' }}>（为空则仅本人可见）</span>
+          </div>
+          <Select
+            value={publishScope}
+            onChange={setPublishScope}
+            allowClear
+            placeholder="请选择公开范围"
+            size="large"
+            style={{ width: '100%', marginTop: '8px' }}
+          >
+            <Select.Option value="team">团队内可见</Select.Option>
+            <Select.Option value="public">公开（所有人可见）</Select.Option>
+          </Select>
+        </div>
+
+        {/* 按钮 */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+          <Button size="large" onClick={() => setShowPublishModal(false)} style={{ minWidth: '88px' }}>取 消</Button>
+          <Button
+            type="primary"
+            size="large"
+            onClick={handleConfirmPublish}
+            style={{
+              minWidth: '108px',
+              background: 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)',
+              border: 'none', borderRadius: '8px', fontWeight: 500
+            }}
+          >
+            确认发布
+          </Button>
+        </div>
       </Modal>
 
-      {/* 部署成功对话框 */}
+      {/* 发布成功对话框 */}
       <Modal
-        title="部署成功"
+        title="发布成功"
         open={showDeploySuccess}
         onCancel={() => setShowDeploySuccess(false)}
         footer={[
@@ -3148,12 +3505,22 @@ Alina
       >
         <div style={{ textAlign: 'center', padding: '20px 0' }}>
           <div style={{ fontSize: '48px', marginBottom: '16px' }}>🎉</div>
-          <h3 style={{ marginBottom: '8px' }}>技能部署成功！</h3>
+          <h3 style={{ marginBottom: '8px' }}>技能发布成功！</h3>
           <p style={{ color: '#666' }}>
-            <strong>{deployedSkillName}</strong> 已成功部署，现在可以在前台体验了。
+            <strong>{deployedSkillName}</strong> 已发布成功，现在可以在智能体中进行配置了。
           </p>
         </div>
       </Modal>
+
+      {/* 历史版本抽屉 */}
+      <SkillHistoryDrawer
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        history={skillHistory}
+        previewVersion={previewVersion}
+        onEnterPreview={(ver) => setPreviewVersion(ver)}
+        onExitPreview={() => setPreviewVersion(null)}
+      />
     </div>
   );
 };

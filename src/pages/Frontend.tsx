@@ -219,6 +219,11 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
   const [agentCenterSearch, setAgentCenterSearch] = useState('');
   const [showManageDisplay, setShowManageDisplay] = useState(false);
   const [pinnedAgentIds, setPinnedAgentIds] = useState<string[]>(['1', '3', '5', '4', '7']); // 默认固定5个智能体
+  const [showOpenClawDeployModal, setShowOpenClawDeployModal] = useState(false);
+  const [showOpenClawCopyModal, setShowOpenClawCopyModal] = useState(false);
+  const [openClawCopyName, setOpenClawCopyName] = useState('OpenClaw助手(副本)');
+  const [openClawCopyDesc, setOpenClawCopyDesc] = useState('OpenClaw智能代理：提供多场景AI服务，自动化处理任务，提升工作效率。');
+  const isOpenClawDeployed = false; // mock：未部署状态
   const [agentCenterSceneFilter, setAgentCenterSceneFilter] = useState('全部'); // 场景筛选
   const [agentCenterTypeFilter, setAgentCenterTypeFilter] = useState('全部'); // 类型筛选：全部/单智能体/多智能体
 
@@ -1977,6 +1982,31 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                 </div>
               )} */}
 
+              <div
+                onClick={() => {
+                  if (isOpenClawDeployed) {
+                    window.location.hash = 'openclaw';
+                  } else {
+                    setShowOpenClawDeployModal(true);
+                  }
+                }}
+                style={{
+                  padding: '10px 8px',
+                  marginBottom: '8px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  borderRadius: '8px',
+                  transition: 'background 0.3s'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = '#f5f5f5'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+              >
+                <span style={{ fontSize: '16px' }}>🦞</span>
+                <span style={{ fontSize: '14px' }}>OpenClaw</span>
+              </div>
+
               <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                 <div style={{
                   display: 'flex',
@@ -2026,26 +2056,9 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
         </div>
         <div style={{ borderTop: '1px solid #f0f0f0', flexShrink: 0 }}>
           <div
-            onClick={() => { window.location.hash = 'openclaw'; }}
-            style={{
-              padding: '12px 16px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              transition: 'background 0.3s'
-            }}
-            onMouseEnter={(e) => e.currentTarget.style.background = '#f5f5f5'}
-            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-          >
-            <span style={{ fontSize: '16px' }}>🦞</span>
-            <span style={{ fontSize: '14px' }}>OpenClaw</span>
-          </div>
-          <div
             onClick={onBackToAdmin}
             style={{
               padding: '12px 16px',
-              borderTop: '1px solid #f0f0f0',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
@@ -3582,6 +3595,287 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
           }}>
             已选择 {pinnedAgentIds.length}/5 个智能体
           </div>
+        </div>
+      </Modal>
+
+      {/* OpenClaw 部署引导 Modal */}
+      <Modal
+        open={showOpenClawDeployModal}
+        onCancel={() => setShowOpenClawDeployModal(false)}
+        footer={null}
+        width={480}
+        centered
+        closable={false}
+        bodyStyle={{ padding: 0 }}
+        style={{ borderRadius: '20px', overflow: 'hidden' }}
+      >
+        <div style={{
+          background: 'linear-gradient(160deg, #1a1033 0%, #2d1b69 40%, #1e3a5f 100%)',
+          padding: '0',
+          borderRadius: '16px',
+          overflow: 'hidden',
+          position: 'relative',
+        }}>
+          {/* 关闭按钮 */}
+          <div
+            onClick={() => setShowOpenClawDeployModal(false)}
+            style={{
+              position: 'absolute',
+              top: '16px',
+              right: '16px',
+              width: '28px',
+              height: '28px',
+              borderRadius: '50%',
+              background: 'rgba(255,255,255,0.15)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              color: '#fff',
+              fontSize: '14px',
+              zIndex: 10,
+            }}
+          >
+            ✕
+          </div>
+
+          {/* 顶部装饰光晕 */}
+          <div style={{
+            position: 'absolute',
+            top: '-60px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            width: '300px',
+            height: '300px',
+            borderRadius: '50%',
+            background: 'radial-gradient(circle, rgba(139,92,246,0.4) 0%, transparent 70%)',
+            pointerEvents: 'none',
+          }} />
+
+          {/* 主内容 */}
+          <div style={{ padding: '48px 40px 40px', position: 'relative' }}>
+            {/* 图标 */}
+            <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+              <div style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '72px',
+                height: '72px',
+                borderRadius: '20px',
+                background: 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)',
+                fontSize: '36px',
+                boxShadow: '0 8px 32px rgba(99,102,241,0.5)',
+                marginBottom: '4px',
+              }}>
+                🦞
+              </div>
+            </div>
+
+            {/* 标题 */}
+            <div style={{ textAlign: 'center', marginBottom: '8px' }}>
+              <div style={{ fontSize: '22px', fontWeight: 700, color: '#fff', marginBottom: '8px' }}>
+                OpenClaw 部署指南
+              </div>
+            </div>
+
+            {/* 分割线 */}
+            <div style={{
+              height: '1px',
+              background: 'rgba(255,255,255,0.1)',
+              margin: '24px 0',
+            }} />
+
+            {/* 部署步骤 */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '28px' }}>
+              {[
+                {
+                  step: 'Step 1',
+                  title: '选择模板',
+                  desc: '点击下方「一键部署」，或在万卷后台 OpenClaw 中创建实例复制 OpenClaw 应用模板',
+                },
+                {
+                  step: 'Step 2',
+                  title: '开启对话',
+                  desc: '在配置页右侧通过自然语言对话，测试 OpenClaw 连通性',
+                },
+                {
+                  step: 'Step 3',
+                  title: '一键部署上线',
+                  desc: '按需进行飞书、钉钉等消息渠道的配置，完成上线',
+                },
+              ].map((item) => (
+                <div key={item.step} style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
+                  <div style={{
+                    flexShrink: 0,
+                    width: 'auto',
+                    padding: '0 10px',
+                    height: '26px',
+                    borderRadius: '6px',
+                    background: 'rgba(99,102,241,0.3)',
+                    border: '1px solid rgba(99,102,241,0.5)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    color: '#a5b4fc',
+                    letterSpacing: '0.5px',
+                    whiteSpace: 'nowrap',
+                  }}>
+                    {item.step}
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '14px', fontWeight: 600, color: '#fff', marginBottom: '2px' }}>
+                      {item.title}
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.45)', lineHeight: '1.5' }}>
+                      {item.desc}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* 行动按钮 */}
+            <Button
+              type="primary"
+              block
+              size="large"
+              onClick={() => {
+                setShowOpenClawDeployModal(false);
+                setShowOpenClawCopyModal(true);
+              }}
+              style={{
+                height: '48px',
+                borderRadius: '12px',
+                background: 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)',
+                border: 'none',
+                fontSize: '15px',
+                fontWeight: 600,
+                boxShadow: '0 4px 20px rgba(99,102,241,0.5)',
+              }}
+            >
+              一键部署你的 OpenClaw
+            </Button>
+
+            <div style={{
+              textAlign: 'center',
+              marginTop: '14px',
+              fontSize: '12px',
+              color: 'rgba(255,255,255,0.3)',
+            }}>
+              部署完成后刷新页面即可使用
+            </div>
+          </div>
+        </div>
+      </Modal>
+
+      {/* 创建副本 Modal */}
+      <Modal
+        open={showOpenClawCopyModal}
+        onCancel={() => setShowOpenClawCopyModal(false)}
+        footer={null}
+        width={520}
+        centered
+        title={<span style={{ fontSize: '18px', fontWeight: 600 }}>创建副本</span>}
+        closeIcon={<span style={{ fontSize: '16px', color: '#999' }}>×</span>}
+      >
+        {/* 提示说明 */}
+        <div style={{
+          background: '#f7f7f7',
+          borderRadius: '10px',
+          padding: '14px 16px',
+          marginBottom: '24px',
+          fontSize: '13px',
+          color: '#999',
+          lineHeight: '1.6',
+        }}>
+          提示：副本创建范围包含代码、压缩后的上下文、数据库/存储/变量的结构定义。不含具体数据及环境变量值。
+        </div>
+
+        {/* 应用名称 */}
+        <div style={{ marginBottom: '20px' }}>
+          <div style={{ fontSize: '14px', fontWeight: 500, color: '#333', marginBottom: '8px' }}>应用名称</div>
+          <Input
+            value={openClawCopyName}
+            onChange={(e) => setOpenClawCopyName(e.target.value)}
+            style={{ borderRadius: '10px', height: '42px', fontSize: '14px' }}
+          />
+        </div>
+
+        {/* 应用介绍 */}
+        <div style={{ marginBottom: '24px' }}>
+          <div style={{ fontSize: '14px', fontWeight: 500, color: '#333', marginBottom: '8px' }}>应用介绍</div>
+          <Input.TextArea
+            value={openClawCopyDesc}
+            onChange={(e) => setOpenClawCopyDesc(e.target.value)}
+            rows={3}
+            style={{ borderRadius: '10px', fontSize: '14px', resize: 'vertical' }}
+          />
+        </div>
+
+        {/* 图标 */}
+        <div style={{ marginBottom: '32px' }}>
+          <div style={{ fontSize: '14px', fontWeight: 500, color: '#333', marginBottom: '12px' }}>图标</div>
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+            <div style={{
+              width: '64px',
+              height: '64px',
+              borderRadius: '16px',
+              background: 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '32px',
+              cursor: 'pointer',
+              border: '2px solid #6366F1',
+            }}>
+              🦞
+            </div>
+            <div style={{
+              width: '64px',
+              height: '64px',
+              borderRadius: '16px',
+              border: '1.5px dashed #d9d9d9',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              color: '#999',
+              fontSize: '22px',
+            }}>
+              ✨
+            </div>
+          </div>
+        </div>
+
+        {/* 底部按钮 */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+          <Button
+            size="large"
+            onClick={() => setShowOpenClawCopyModal(false)}
+            style={{ borderRadius: '10px', minWidth: '88px' }}
+          >
+            取消
+          </Button>
+          <Button
+            type="primary"
+            size="large"
+            onClick={() => {
+              setShowOpenClawCopyModal(false);
+              window.location.hash = 'openclaw-editor?mode=create';
+            }}
+            style={{
+              borderRadius: '10px',
+              minWidth: '88px',
+              background: '#1a1a1a',
+              borderColor: '#1a1a1a',
+              fontWeight: 600,
+            }}
+          >
+            确认
+          </Button>
         </div>
       </Modal>
     </Layout>

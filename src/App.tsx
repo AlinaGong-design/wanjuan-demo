@@ -12,12 +12,16 @@ import MCP from './pages/MCP';
 import API from './pages/API';
 import Components from './pages/Components';
 import Model from './pages/Model';
-import Evaluation from './pages/Evaluation';
+import { EvaluationTasks, EvaluationData, EvaluationRules } from './pages/Evaluation';
+import EvaluatorEditor from './pages/EvaluatorEditor';
 import System from './pages/System';
 import Frontend from './pages/Frontend';
 import Channels from './pages/Channels';
 import OpenClawIM from './pages/OpenClaw';
+import OpenClawDashboard from './pages/OpenClawDashboard';
 import OpenClawInstances from './pages/OpenClawInstances';
+import DigitalAvatar from './pages/DigitalAvatar';
+import DigitalEmployee from './pages/DigitalEmployee';
 import './App.css';
 
 type PageType =
@@ -34,12 +38,18 @@ type PageType =
   | 'components'
   | 'model'
   | 'evaluation'
+  | 'evaluation-tasks'
+  | 'evaluation-data'
+  | 'evaluation-rules'
   | 'system'
   | 'frontend'
   | 'channels'
   | 'openclaw'
   | 'openclaw-instances'
-  | 'openclaw-editor';
+  | 'openclaw-editor'
+  | 'evaluator-editor'
+  | 'digital-avatar'
+  | 'digital-employee';
 
 function App() {
   const [currentPage, setCurrentPage] = useState<PageType>('home');
@@ -50,6 +60,10 @@ function App() {
   const [editingAgentId, setEditingAgentId] = useState<string | undefined>(undefined);
   const [editingOpenClawId, setEditingOpenClawId] = useState<string | undefined>(undefined);
   const [openClawEditorMode, setOpenClawEditorMode] = useState<'create' | 'edit'>('create');
+  const [evaluatorType, setEvaluatorType] = useState<'LLM' | 'Code'>('LLM');
+  const [evaluatorEditorMode, setEvaluatorEditorMode] = useState<'create' | 'edit'>('create');
+  const [editingEvaluatorId, setEditingEvaluatorId] = useState<string | undefined>(undefined);
+  const [importFileName, setImportFileName] = useState<string>('');
 
   // 监听 hash 变化
   useEffect(() => {
@@ -89,7 +103,17 @@ function App() {
           setOpenClawEditorMode(mode);
           setEditingOpenClawId(instanceId);
           setCurrentPage('openclaw-editor');
-        } else if (['home', 'agent', 'knowledge', 'skill', 'workflow', 'mcp', 'api', 'components', 'model', 'evaluation', 'system', 'channels', 'openclaw', 'openclaw-instances'].includes(path)) {
+        } else if (path === 'evaluator-editor') {
+          const searchParams = new URLSearchParams(params);
+          const type = searchParams.get('type') as 'LLM' | 'Code' || 'LLM';
+          const mode = searchParams.get('mode') as 'create' | 'edit' || 'create';
+          const evaluatorId = searchParams.get('id') || undefined;
+
+          setEvaluatorType(type);
+          setEvaluatorEditorMode(mode);
+          setEditingEvaluatorId(evaluatorId);
+          setCurrentPage('evaluator-editor');
+        } else if (['home', 'agent', 'knowledge', 'skill', 'workflow', 'mcp', 'api', 'components', 'model', 'evaluation', 'evaluation-tasks', 'evaluation-data', 'evaluation-rules', 'system', 'channels', 'openclaw', 'openclaw-instances', 'digital-avatar', 'digital-employee'].includes(path)) {
           setCurrentPage(path as PageType);
         }
       }
@@ -121,6 +145,12 @@ function App() {
   };
 
   const handleCreateSkill = () => {
+    setImportFileName('');
+    window.location.hash = 'skill-editor?mode=create';
+  };
+
+  const handleImportSkill = (fileName: string) => {
+    setImportFileName(fileName);
     window.location.hash = 'skill-editor?mode=create';
   };
 
@@ -144,6 +174,18 @@ function App() {
     window.location.hash = 'openclaw-instances';
   };
 
+  const handleCreateEvaluator = (type: 'LLM' | 'Code') => {
+    window.location.hash = `evaluator-editor?type=${type}&mode=create`;
+  };
+
+  const handleEditEvaluator = (evaluatorId: string, type: 'LLM' | 'Code') => {
+    window.location.hash = `evaluator-editor?type=${type}&mode=edit&id=${evaluatorId}`;
+  };
+
+  const handleBackToEvaluationRules = () => {
+    window.location.hash = 'evaluation-rules';
+  };
+
   const handleTrySkill = (skillId: string, skillName: string, skillIcon: string) => {
     // 创建一个临时的SkillItem用于前台预览
     const tempSkill: SkillItem = {
@@ -161,11 +203,11 @@ function App() {
   };
 
   // Agent相关的处理函数
-  const handleCreateAgent = (type: 'autonomous' | 'collaborative') => {
-    if (type === 'autonomous') {
-      window.location.hash = `agent-editor?type=${type}`;
-    } else {
+  const handleCreateAgent = (type: 'rag' | 'autonomous' | 'collaborative') => {
+    if (type === 'collaborative') {
       window.location.hash = `agent-collaborative`;
+    } else {
+      window.location.hash = `agent-editor?type=${type}`;
     }
   };
 
@@ -202,6 +244,7 @@ function App() {
             onPreviewSkill={handlePreviewSkill}
             onCreateSkill={handleCreateSkill}
             onEditSkill={handleEditSkill}
+            onImportSkill={handleImportSkill}
           />
         );
       case 'workflow':
@@ -215,11 +258,25 @@ function App() {
       case 'model':
         return <Model />;
       case 'evaluation':
-        return <Evaluation />;
+      case 'evaluation-tasks':
+        return <EvaluationTasks />;
+      case 'evaluation-data':
+        return <EvaluationData />;
+      case 'evaluation-rules':
+        return (
+          <EvaluationRules
+            onCreateEvaluator={handleCreateEvaluator}
+            onEditEvaluator={handleEditEvaluator}
+          />
+        );
       case 'system':
         return <System />;
       case 'channels':
         return <Channels />;
+      case 'digital-avatar':
+        return <DigitalAvatar />;
+      case 'digital-employee':
+        return <DigitalEmployee />;
       case 'openclaw-instances':
         return (
           <OpenClawInstances
@@ -239,11 +296,7 @@ function App() {
   }
 
   if (currentPage === 'openclaw') {
-    return (
-      <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
-        <OpenClawIM />
-      </div>
-    );
+    return <OpenClawDashboard />;
   }
 
   if (currentPage === 'agent-editor') {
@@ -270,8 +323,10 @@ function App() {
         <SkillEditor
           skillId={editingSkillId}
           mode={editorMode}
+          importFileName={importFileName}
           onBack={handleBackToSkillList}
           onTrySkill={handleTrySkill}
+          onImportSkill={handleImportSkill}
         />
       </div>
     );
@@ -285,6 +340,19 @@ function App() {
           mode={openClawEditorMode}
           onBack={handleBackToOpenClawInstances}
           context="openclaw"
+        />
+      </div>
+    );
+  }
+
+  if (currentPage === 'evaluator-editor') {
+    return (
+      <div style={{ height: '100vh', background: '#fff' }}>
+        <EvaluatorEditor
+          type={evaluatorType}
+          mode={evaluatorEditorMode}
+          evaluatorId={editingEvaluatorId}
+          onBack={handleBackToEvaluationRules}
         />
       </div>
     );

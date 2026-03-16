@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Layout, Menu, Avatar, Badge, Breadcrumb } from 'antd';
 import {
   HomeOutlined,
@@ -15,9 +15,12 @@ import {
   BellOutlined,
   UserOutlined,
   CloudServerOutlined,
-  DeploymentUnitOutlined,
   BranchesOutlined,
-  CustomerServiceOutlined,
+  OrderedListOutlined,
+  FolderOpenOutlined,
+  SafetyCertificateOutlined,
+  SmileOutlined,
+  TeamOutlined as TeamIconOutlined,
 } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
 
@@ -32,16 +35,19 @@ const items: MenuItem[] = [
     label: '首页',
   },
   {
-    key: 'personal-assistant-group',
-    icon: <CustomerServiceOutlined />,
-    label: '个人助理',
-    children: [
-      {
-        key: 'openclaw-instances',
-        icon: <BranchesOutlined />,
-        label: 'OpenClaw',
-      },
-    ],
+    key: 'digital-avatar',
+    icon: <SmileOutlined />,
+    label: '数字分身',
+  },
+  {
+    key: 'digital-employee',
+    icon: <TeamIconOutlined />,
+    label: '数字员工',
+  },
+  {
+    key: 'openclaw',
+    icon: <BranchesOutlined />,
+    label: 'OpenClaw',
   },
   {
     key: 'agent',
@@ -94,6 +100,23 @@ const items: MenuItem[] = [
     key: 'evaluation',
     icon: <BarChartOutlined />,
     label: '评测',
+    children: [
+      {
+        key: 'evaluation-tasks',
+        icon: <OrderedListOutlined />,
+        label: '评测任务',
+      },
+      {
+        key: 'evaluation-data',
+        icon: <FolderOpenOutlined />,
+        label: '评测集',
+      },
+      {
+        key: 'evaluation-rules',
+        icon: <SafetyCertificateOutlined />,
+        label: '评估器',
+      },
+    ],
   },
   {
     key: 'system',
@@ -112,7 +135,14 @@ interface MainLayoutProps {
 
 const MainLayout: React.FC<MainLayoutProps> = ({ children, currentPage = 'home', onMenuClick, onFrontendClick, onOpenClawClick }) => {
   const [selectedKey, setSelectedKey] = useState(currentPage);
-  const [openKeys, setOpenKeys] = useState<string[]>([]);
+
+  const getDefaultOpenKeys = (page: string): string[] => {
+    if (['skill', 'workflow', 'mcp', 'api', 'components'].includes(page)) return ['tools'];
+    if (['evaluation-tasks', 'evaluation-data', 'evaluation-rules'].includes(page)) return ['evaluation'];
+    return [];
+  };
+
+  const [openKeys, setOpenKeys] = useState<string[]>(getDefaultOpenKeys(currentPage));
 
   const handleMenuClick: MenuProps['onClick'] = (e) => {
     setSelectedKey(e.key);
@@ -121,12 +151,13 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children, currentPage = 'home',
     }
   };
 
-  const handleTabChange = (key: string) => {
-    setSelectedKey(key);
-    if (onMenuClick) {
-      onMenuClick(key);
+  useEffect(() => {
+    setSelectedKey(currentPage);
+    const newOpenKeys = getDefaultOpenKeys(currentPage);
+    if (newOpenKeys.length > 0) {
+      setOpenKeys(prev => Array.from(new Set([...prev, ...newOpenKeys])));
     }
-  };
+  }, [currentPage]);
 
   const handleOpenChange = (keys: string[]) => {
     setOpenKeys(keys);
