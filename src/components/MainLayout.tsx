@@ -35,10 +35,11 @@ const items: MenuItem[] = [
     label: '首页',
   },
   {
-    key: 'digital-avatar',
-    icon: <SmileOutlined />,
-    label: '数字分身',
+    key: 'digital-employee-workbench',
+    icon: <DashboardOutlined />,
+    label: '数字员工',
   },
+  // { key: 'digital-avatar', icon: <SmileOutlined />, label: '数字分身' },
   {
     key: 'agent',
     icon: <RobotOutlined />,
@@ -144,8 +145,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children, currentPage = 'home',
   const handleMenuClick: MenuProps['onClick'] = (e) => {
     setSelectedKey(e.key);
     if (e.key === 'digital-employee') {
-      // 点击父菜单直接跳转到工作台
-      if (onMenuClick) onMenuClick('digital-employee-workbench');
+      if (onMenuClick) onMenuClick('digital-employee');
       return;
     }
     if (onMenuClick) {
@@ -243,25 +243,6 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children, currentPage = 'home',
             )}
           </div>
           <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
-            <span
-              onClick={() => { window.location.hash = 'digital-employee-workbench'; }}
-              style={{
-                cursor: 'pointer',
-                color: '#6366F1',
-                fontWeight: 500,
-                fontSize: '14px',
-                transition: 'color 0.3s',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.color = '#8B5CF6'}
-              onMouseLeave={(e) => e.currentTarget.style.color = '#6366F1'}
-            >
-              <TeamIconOutlined style={{ fontSize: '15px' }} />
-              数字员工
-            </span>
-            <div style={{ width: 1, height: 16, background: '#e8e8e8' }} />
             <span
               onClick={onFrontendClick}
               style={{

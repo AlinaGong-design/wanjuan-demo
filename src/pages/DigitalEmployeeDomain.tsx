@@ -27,9 +27,10 @@ const MOCK_DOMAINS: DomainItem[] = [
   { id: 'd4', name: '技术研发域', desc: '代码审查、技术文档、架构分析、DevOps 支撑', color: '#3B82F6', icon: '💻', employeeCount: 3, callVolume: 1654, completionRate: 89, reuseRate: 71, category: '技术支撑', tags: ['研发', '代码', '架构'], status: 'active', model: 'gpt-4o', isolationLevel: 'standard' },
   { id: 'd5', name: '客户服务域', desc: '客户咨询、投诉处理、满意度管理、多渠道接入', color: '#EC4899', icon: '🎯', employeeCount: 5, callVolume: 8923, completionRate: 94, reuseRate: 88, category: '市场运营', tags: ['客服', '销售', 'CRM'], status: 'active', model: 'chat-model', isolationLevel: 'standard' },
   { id: 'd6', name: '生产运营域', desc: '生产调度、质量管控、设备维护、安全监管', color: '#8B5CF6', icon: '🏭', employeeCount: 2, callVolume: 1243, completionRate: 91, reuseRate: 60, category: '生产管控', tags: ['生产', '质检', '设备'], status: 'building', model: 'qwen-max', isolationLevel: 'strict' },
+  { id: 'd7', name: '管道安全域', desc: '整合光纤预警、机器视觉、无人机巡护等多源数据，支撑管道智能巡检、预警研判与工单闭环全流程', color: '#EF4444', icon: '🛡️', employeeCount: 1, callVolume: 2156, completionRate: 94, reuseRate: 72, category: '安全管控', tags: ['巡检', '预警', '工单', '管道'], status: 'active', model: 'gpt-4o', isolationLevel: 'strict' },
 ];
 
-const CATEGORIES = ['专业职能', '管理支撑', '财务管控', '技术支撑', '市场运营', '生产管控'];
+const CATEGORIES = ['专业职能', '管理支撑', '财务管控', '技术支撑', '市场运营', '生产管控', '安全管控'];
 const DOMAIN_COLORS = ['#6366F1', '#10B981', '#F59E0B', '#3B82F6', '#EC4899', '#8B5CF6', '#14B8A6', '#EF4444'];
 const DOMAIN_ICONS  = ['⚖️', '👥', '💰', '💻', '🎯', '🏭', '📊', '🔧', '🌐', '🛡️', '📱', '🚀'];
 const MODEL_OPTIONS = [

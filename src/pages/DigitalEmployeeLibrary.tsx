@@ -34,6 +34,7 @@ const MOCK_EMPLOYEES: DigitalEmployeeItem[] = [
   { id: 'de-004', name: '代码审查助手', dept: '技术部',   domain: '技术域', description: 'PR 触发自动代码审查，安全漏洞扫描，输出审查建议并评论到 GitLab/GitHub',   status: 'paused',    version: 'v1.1.0',      scope: 'dept',    updateTime: '2026-02-28', callCount: 1654, score: 4.5, heat: 62, type: '升级款' },
   { id: 'de-005', name: '智能客服分发', dept: '客户成功', domain: '客服域', description: '意图识别、多轮路由分发、自动记录工单，支持人工接管',                       status: 'draft',     version: 'v0.1.0',      scope: 'private', updateTime: '2026-03-15', callCount: 8923, score: 4.7, heat: 91, type: '通用款' },
   { id: 'de-006', name: '运营数据助手', dept: '运营部',   domain: '运营域', description: '自动汇总运营核心指标，生成日/周/月报告，支持钉钉/飞书推送',               status: 'published', version: 'v1.2.0',      scope: 'company', updateTime: '2026-03-12', callCount: 1243, score: 4.3, heat: 55, type: '定制款' },
+  { id: 'de-007', name: '智能巡检助手', dept: '管道运营部', domain: '管道安全域', description: '整合光纤预警、机器视觉、无人机巡护等多源告警，自动完成预警研判、工单派发与闭环跟踪，覆盖管道安全巡检全流程', status: 'published', version: 'v1.0.0', scope: 'company', updateTime: '2026-03-20', callCount: 2156, score: 4.7, heat: 83, type: '定制款' },
 ];
 
 const MOCK_VERSIONS: EmployeeVersion[] = [
@@ -62,10 +63,10 @@ const TYPE_CONFIG: Record<string, { color: string; bg: string }> = {
   '升级款': { color: '#F59E0B', bg: '#fefce8' },
 };
 
-const DOMAIN_LIST = ['全部', '法务域', '人力域', '财务域', '技术域', '客服域', '运营域'];
+const DOMAIN_LIST = ['全部', '法务域', '人力域', '财务域', '技术域', '客服域', '运营域', '管道安全域'];
 const DOMAIN_COLORS: Record<string, string> = {
   '全部': '#6366F1', '法务域': '#6366F1', '人力域': '#10B981',
-  '财务域': '#F59E0B', '技术域': '#3B82F6', '客服域': '#EC4899', '运营域': '#8B5CF6',
+  '财务域': '#F59E0B', '技术域': '#3B82F6', '客服域': '#EC4899', '运营域': '#8B5CF6', '管道安全域': '#EF4444',
 };
 
 // ─── 工具函数 ──────────────────────────────────────────────

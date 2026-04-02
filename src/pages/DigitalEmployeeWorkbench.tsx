@@ -54,6 +54,7 @@ const TREND_DATA: Record<PeriodKey, { labels: string[]; calls: number[]; rate: n
 
 // ─── 我的收藏（含全部可用员工） ────────────────────────────
 const ALL_EMPLOYEES = [
+  { id: 'de-008', name: '智能巡检助手', dept: '管道运营部', domain: '管道安全域', status: 'published', callCount: 2156 },
   { id: 'de-001', name: '法务合规助手', dept: '法务部',   domain: '法务域', status: 'published', callCount: 328 },
   { id: 'de-002', name: 'HR 招聘助手',  dept: '人力资源', domain: '人力域', status: 'published', callCount: 215 },
   { id: 'de-003', name: '财务报表助手', dept: '财务部',   domain: '财务域', status: 'testing',   callCount: 89  },
@@ -62,11 +63,12 @@ const ALL_EMPLOYEES = [
   { id: 'de-006', name: '智能客服助手', dept: '客户成功', domain: '客服域', status: 'published', callCount: 512 },
   { id: 'de-007', name: '运营数据助手', dept: '运营部',   domain: '运营域', status: 'published', callCount: 173 },
 ];
-const INIT_FAV_IDS = ['de-001', 'de-002', 'de-006', 'de-003', 'de-007'];
+const INIT_FAV_IDS = ['de-008', 'de-001', 'de-002', 'de-006', 'de-003', 'de-007'];
 
 // ─── 业务域 ───────────────────────────────────────────────
 const DOMAIN_LIST = [
   { id: 'all',     name: '全部', color: '#6366F1', employees: [
+    { id: 'de-008', name: '智能巡检助手', dept: '管道安全域', score: 4.7, heat: 83, type: '定制款' },
     { id: 'de-001', name: '法务合规助手', dept: '法务域',  score: 4.8, heat: 95, type: '通用款' },
     { id: 'de-002', name: 'HR 招聘助手',  dept: '人力域',  score: 4.6, heat: 78, type: '定制款' },
     { id: 'de-003', name: '财务报表助手', dept: '财务域',  score: 4.9, heat: 88, type: '通用款' },
@@ -78,6 +80,7 @@ const DOMAIN_LIST = [
   { id: 'hr',      name: '人力域', color: '#10B981', employees: [{ id: 'de-002', name: 'HR 招聘助手',  dept: '人力域', score: 4.6, heat: 78, type: '定制款' }] },
   { id: 'finance', name: '财务域', color: '#F59E0B', employees: [{ id: 'de-003', name: '财务报表助手', dept: '财务域', score: 4.9, heat: 88, type: '通用款' }] },
   { id: 'tech',    name: '技术域', color: '#3B82F6', employees: [{ id: 'de-004', name: '代码审查助手', dept: '技术域', score: 4.5, heat: 62, type: '升级款' }] },
+  { id: 'pipeline', name: '管道安全域', color: '#EF4444', employees: [{ id: 'de-008', name: '智能巡检助手', dept: '管道安全域', score: 4.7, heat: 83, type: '定制款' }] },
 ];
 
 // ─── 待处理事项（含跳转目标） ─────────────────────────────

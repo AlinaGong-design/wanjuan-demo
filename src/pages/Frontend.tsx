@@ -197,6 +197,1184 @@ interface DocPanel {
   sourceMessageId?: string;
 }
 
+// ─── 数字员工任务状态 Mock 数据 ──────────────────────────────
+const TASK_STATUS_COLORS: Record<string, { bg: string; color: string; label: string }> = {
+  running:   { bg: '#f0fdf4', color: '#16a34a', label: '执行中' },
+  done:      { bg: '#f0f9ff', color: '#0284c7', label: '已完成' },
+  failed:    { bg: '#fff1f2', color: '#e11d48', label: '失败' },
+  waiting:   { bg: '#fefce8', color: '#ca8a04', label: '等待中' },
+};
+
+interface TaskStep {
+  id: string;
+  name: string;
+  status: 'done' | 'running' | 'waiting' | 'failed';
+  desc: string;
+  time?: string;
+  output?: string;
+}
+interface TaskItem {
+  id: string;
+  title: string;
+  status: string;
+  time: string;
+  duration?: string;
+  result?: string;
+  steps: TaskStep[];
+}
+
+const STEP_COLORS: Record<string, { bg: string; color: string; dot: string }> = {
+  done:    { bg: '#f0f9ff', color: '#0284c7', dot: '#0284c7' },
+  running: { bg: '#f0fdf4', color: '#16a34a', dot: '#16a34a' },
+  waiting: { bg: '#fafafa', color: '#9ca3af', dot: '#d1d5db' },
+  failed:  { bg: '#fff1f2', color: '#e11d48', dot: '#e11d48' },
+};
+
+const MOCK_TASKS: Record<string, TaskItem[]> = {
+  'de-001': [
+    { id: 't1', title: '合同风险条款审查 — 供应商协议 v3.pdf', status: 'done', time: '10:32', duration: '2m 14s', result: '发现 3 处高风险条款，已生成审查报告',
+      steps: [
+        { id: 's1', name: '文档解析', status: 'done', desc: '调用 PDF 解析引擎提取全文结构', time: '10:32:01', output: '共提取 47 页，12,340 字，识别到 23 个条款段落' },
+        { id: 's2', name: '合规规则匹配', status: 'done', desc: '逐条检索合规知识库规则', time: '10:32:08', output: '命中规则库 312 条，完成条款交叉映射' },
+        { id: 's3', name: '风险识别', status: 'done', desc: 'AI 分析高风险语义模式，标注异常条款', time: '10:32:18', output: '识别出 3 处高风险：违约责任上限条款、单方解约权条款、数据归属模糊条款' },
+        { id: 's4', name: '报告生成', status: 'done', desc: '生成结构化审查报告并写入飞书文档', time: '10:34:15', output: '审查报告已生成，含风险等级标注与修改建议，已推送给法务负责人' },
+      ],
+    },
+    { id: 't2', title: '劳动合同模板合规性校验', status: 'done', time: '09:18', duration: '1m 05s', result: '合规，无异常项',
+      steps: [
+        { id: 's1', name: '模板解析', status: 'done', desc: '解析劳动合同模板文档结构', time: '09:18:00', output: '解析完成，共 8 个核心条款段落' },
+        { id: 's2', name: '劳动法规则匹配', status: 'done', desc: '对照劳动法、劳动合同法等法规逐条验证', time: '09:18:22', output: '全部条款符合现行法规要求' },
+        { id: 's3', name: '校验报告输出', status: 'done', desc: '生成合规校验结论', time: '09:19:05', output: '结论：合规，无异常项，可直接使用' },
+      ],
+    },
+    { id: 't3', title: '公司章程修订合规检查', status: 'running', time: '11:05',
+      steps: [
+        { id: 's1', name: '文档解析', status: 'done', desc: '解析修订版章程文档', time: '11:05:00', output: '解析完成，检测到 15 处修订标记' },
+        { id: 's2', name: '修订差异分析', status: 'running', desc: '对比原版与修订版，识别变更影响范围', time: '11:05:30' },
+        { id: 's3', name: '公司法合规验证', status: 'waiting', desc: '对照公司法、监管要求验证修订合法性' },
+        { id: 's4', name: '报告生成', status: 'waiting', desc: '输出合规检查报告' },
+      ],
+    },
+    { id: 't4', title: '数据安全协议条款提取与风险评估', status: 'waiting', time: '11:06',
+      steps: [
+        { id: 's1', name: '文档接收', status: 'waiting', desc: '等待用户上传数据安全协议文档' },
+        { id: 's2', name: '条款提取', status: 'waiting', desc: '提取数据处理、存储、传输相关条款' },
+        { id: 's3', name: '数据安全法规比对', status: 'waiting', desc: '对照数据安全法、个人信息保护法评估风险' },
+        { id: 's4', name: '风险报告输出', status: 'waiting', desc: '输出风险等级评估与整改建议' },
+      ],
+    },
+  ],
+  'de-002': [
+    { id: 't1', title: '批量简历筛选 — Java 高级工程师 (32份)', status: 'done', time: '09:00', duration: '4m 28s', result: '筛选出 8 份入围，生成候选人对比表',
+      steps: [
+        { id: 's1', name: '简历解析', status: 'done', desc: '批量解析 32 份简历文件，提取结构化信息', time: '09:00:00', output: '解析完成：32 份，成功 31 份，1 份格式异常已跳过' },
+        { id: 's2', name: 'JD 匹配度打分', status: 'done', desc: '对照岗位要求对每份简历进��多维度评分', time: '09:01:30', output: '平均匹配度 61%，最高 94%（候选人：王某），最低 28%' },
+        { id: 's3', name: '筛选与排名', status: 'done', desc: '按匹配度排序，筛选阈值 ≥ 75%', time: '09:03:45', output: '入围 8 人：匹配度 94% / 91% / 88% / 86% / 83% / 81% / 79% / 77%' },
+        { id: 's4', name: '对比表生成', status: 'done', desc: '生成候选人多维对比表并写入飞书多维表格', time: '09:04:28', output: '对比表已生成，含技能评分、工作年限、期望薪资、优劣势总结' },
+      ],
+    },
+    { id: 't2', title: '面试时间协调 — 张某某 & 李某某', status: 'done', time: '10:15', duration: '0m 43s', result: '已同步至飞书日历',
+      steps: [
+        { id: 's1', name: '日历可用性查询', status: 'done', desc: '读取面试官与候选人飞书日历空闲时段', time: '10:15:00', output: '检测到 3 个共同空闲时段：3月31日 14:00/15:00/16:00' },
+        { id: 's2', name: '时间确认', status: 'done', desc: '发送时间选择消息给候选人，等待确认', time: '10:15:20', output: '候选人张某某选择 14:00，李某某选择 15:30' },
+        { id: 's3', name: '日历写入', status: 'done', desc: '创建飞书日历事件并发送邀请', time: '10:15:43', output: '日历事件已创建，面试官、候选人均已收到邀请' },
+      ],
+    },
+    { id: 't3', title: '薪酬 Benchmark 报告生成 — 产品经理', status: 'running', time: '11:02',
+      steps: [
+        { id: 's1', name: '市场数据采集', status: 'done', desc: '从薪酬数据库采集产品经理市场薪资数据', time: '11:02:00', output: '采集完成，覆盖 3 个城市、5个行业、2800+ 数据点' },
+        { id: 's2', name: '分位数分析', status: 'running', desc: '按城市、行业、工作年限计算薪资分位数', time: '11:02:45' },
+        { id: 's3', name: 'Benchmark 报告生成', status: 'waiting', desc: '生成结构化薪酬对标报告' },
+      ],
+    },
+  ],
+  'de-006': [
+    { id: 't1', title: '日报生成 — 3月29日运营核心指标', status: 'done', time: '08:00', duration: '1m 12s', result: '已推送钉钉群',
+      steps: [
+        { id: 's1', name: '数据拉取', status: 'done', desc: '从数仓拉取昨日运营核心指标', time: '08:00:00', output: 'DAU、GMV、转化率、留存率等 18 项指标拉取完成' },
+        { id: 's2', name: 'AI 分析', status: 'done', desc: '对异常波动指标进行智能解读', time: '08:00:38', output: '发现 DAU 环比下降 3.2%，AI 判断原因：节假日效应，属正常波动' },
+        { id: 's3', name: '报告生成与推送', status: 'done', desc: '生成日报文档，推送至钉钉运营群', time: '08:01:12', output: '日报已推送，@相关负责人' },
+      ],
+    },
+    { id: 't2', title: '周报生成 — 第13周', status: 'done', time: '08:01', duration: '3m 07s', result: '已推送邮件订阅列表',
+      steps: [
+        { id: 's1', name: '周数据汇总', status: 'done', desc: '汇总第13周全量运营数据', time: '08:01:00', output: '7天数据汇总完成，含趋势、环比、同比' },
+        { id: 's2', name: '亮点 & 问题识别', status: 'done', desc: 'AI 自动识别本周亮点与需关注问题', time: '08:02:10', output: '亮点：新用户增长+12%；问题：付费转化率连续3天下滑' },
+        { id: 's3', name: '周报生成', status: 'done', desc: '生成图文周报，含趋势图表', time: '08:03:50', output: '周报生成完成，共 8 页' },
+        { id: 's4', name: '邮件推送', status: 'done', desc: '推送至邮件订阅列表（共 23 人）', time: '08:04:07', output: '推送成功，23 人已收到' },
+      ],
+    },
+    { id: 't3', title: '月活用户异常波动预警分析', status: 'failed', time: '10:50', result: '数据源连接超时，已重试 3 次',
+      steps: [
+        { id: 's1', name: '数据源连接', status: 'failed', desc: '连接���户行为数仓', time: '10:50:00', output: '连接超时（30s），已自动重试 3 次，均失败。请检查数仓服务状态' },
+        { id: 's2', name: '异常检测', status: 'waiting', desc: '等待数据就绪后执行波动检测算法' },
+        { id: 's3', name: '预警报告', status: 'waiting', desc: '生成波动原因分析报告' },
+      ],
+    },
+    { id: 't4', title: '竞品流量对比报告', status: 'waiting', time: '11:10',
+      steps: [
+        { id: 's1', name: '竞品数据采集', status: 'waiting', desc: '从第三方流量平台拉取竞品流量数据' },
+        { id: 's2', name: '对比分析', status: 'waiting', desc: '多维度对比本产品与竞品流量结构' },
+        { id: 's3', name: '报告生成', status: 'waiting', desc: '输出竞品流量对比分析报告' },
+      ],
+    },
+  ],
+  'de-007': [
+    { id: 't-701', title: '光纤预警信号研判 — 里程桩 K42+300 附近机械振动异常', status: 'done', time: '09:15', duration: '4分钟', result: '判定为二级预警，已触发工单派发，巡护工已到场核查',
+      steps: [
+        { id: 's1', name: '告警感知', status: 'done', desc: '光纤监测系统检测到 K42+300 段异常振动波形，幅值 3.8g，持续 42 秒', time: '09:15:03', output: '原始波形数据已接入，预警类型初判：机械振动（挖掘机级别）' },
+        { id: 's2', name: '多源交叉验证', status: 'done', desc: '调取该区域实时视频监控画面，AI视觉识别交叉比对', time: '09:15:18', output: '视频识别确认：K42+310 处发现1台挖掘机作业，与光纤告警位置吻合，判定有效预警' },
+        { id: 's3', name: '预警分级研判', status: 'done', desc: '综合振动幅值、作业类型、管道埋深等参数进行风险分级', time: '09:16:05', output: '判定结果：二级预警（中高风险），建议立即派单处置，同时保持视频监控持续追踪' },
+        { id: 's4', name: '工单派发', status: 'done', desc: '通过工单系统自动生成派单，通知就近巡护工', time: '09:16:30', output: '工单 WO-2026-0329-112 已创建，派发至巡护工李某（距现场约 1.2km），预计到达时间 09:28' },
+        { id: 's5', name: '闭环跟踪', status: 'done', desc: '持续监控工单进展，等待现场核查反馈', time: '09:19:00', output: '09:31 巡护工到达现场，确认为合法施工（有作业许可证），已要求施工方保持安全距离，工单闭环' },
+      ],
+    },
+    { id: 't-702', title: '无人机巡护任务 — 第3标段 B 线路日常巡视', status: 'running', time: '10:30', duration: '进行中',
+      steps: [
+        { id: 's1', name: '巡护数据接入', status: 'done', desc: '接收无人机实时回传的巡视视频流与定位数据', time: '10:30:00', output: '无人机编号 UAV-031，当前飞行高度 80m，已完成 3.2km 巡视' },
+        { id: 's2', name: 'AI视觉分析', status: 'done', desc: '对回传视频逐帧进行违章占压、安全隐患识别', time: '10:31:20', output: '已扫描 8.6km 管段，发现 1 处疑似占压：K38+450 附近有临时构筑物' },
+        { id: 's3', name: '异常事件上报', status: 'running', desc: '对识别到的疑似占压进行进一步核实与上报', time: '10:33:00' },
+        { id: 's4', name: '巡视报告生成', status: 'waiting', desc: '任务完成后自动生成巡视报告，含路线图与异常清单' },
+      ],
+    },
+    { id: 't-703', title: '工单闭环跟踪 — WO-2026-0318-047 处置详情记录', status: 'done', time: '08:00', duration: '12分钟', result: '现场核查无风险，标记为无效预警，已同步至算法优化数据集',
+      steps: [
+        { id: 's1', name: '工单状态查询', status: 'done', desc: '通过工单系统接口获取 WO-2026-0318-047 最新状态', time: '08:00:05', output: '工单状态：待闭环。巡护工王某已于 07:52 到达现场' },
+        { id: 's2', name: '现场核查结果接收', status: 'done', desc: '接收巡护工提交的现场核查照片与文字反馈', time: '08:05:30', output: '核查照片 3 张，文字反馈：现场为农田灌溉作业，深度不超过 30cm，无安全风险' },
+        { id: 's3', name: '无效预警标记', status: 'done', desc: '将本次预警标记为无效预警并记录原因', time: '08:10:00', output: '标记类型：农业作业误报，原因：浅层农业作业触发光纤预警，振动特征与机械挖掘相似' },
+        { id: 's4', name: '数据回流', status: 'done', desc: '将无效预警样本同步至算法训练数据集，用于优化识别模型', time: '08:12:00', output: '样本已同步至算法优化数据集，本月已累计回流 23 条无效预警样本' },
+      ],
+    },
+    { id: 't-704', title: '多源告警交叉验证 — IMS 报警 × 视频AI识别', status: 'waiting', time: '11:00',
+      steps: [
+        { id: 's1', name: 'IMS 报警接入', status: 'waiting', desc: '等待 IMS 系统推送报警信息' },
+        { id: 's2', name: '视频调取', status: 'waiting', desc: '根据报警位置调取对应摄像头实时视频' },
+        { id: 's3', name: 'AI 交叉验证', status: 'waiting', desc: '对 IMS 报警与视频识别结果进行交叉比对，过滤无效预警' },
+        { id: 's4', name: '研判结论输出', status: 'waiting', desc: '输出验证结论：有效/无效，并决策下一步处置动作' },
+      ],
+    },
+    { id: 't-705', title: '经验沉淀 — 本周打孔盗油风险事件复盘报告生成', status: 'done', time: '07:30', duration: '8分钟', result: '报告已生成，识别出2处高风险区段，建议加密巡护频次',
+      steps: [
+        { id: 's1', name: '历史工单数据汇总', status: 'done', desc: '汇总本周所有打孔盗油相关工单与预警记录', time: '07:30:00', output: '共汇总 18 条工单，其中有效预警 5 条、无效预警 13 条' },
+        { id: 's2', name: '风险区段热力分析', status: 'done', desc: '对告警地理位置进行热力聚类分析', time: '07:33:10', output: '识别出 2 处高频告警区段：K38~K41（6次）、K67~K72（4次）' },
+        { id: 's3', name: '规律特征提取', status: 'done', desc: 'AI 分析高风险事件时间分布、作业特征规律', time: '07:35:50', output: '高发时段：凌晨 2:00-5:00；作业特征：小型挖掘机+短时振动' },
+        { id: 's4', name: '复盘报告生成', status: 'done', desc: '生成图文复盘报告，含建议措施', time: '07:38:00', output: '报告已生成，建议：K38~K41 段加密无人机夜间巡护频次至每日2次，安装补光灯' },
+      ],
+    },
+  ],
+};
+
+const AVATAR_GRADIENTS = [
+  'linear-gradient(135deg, #6366F1, #8B5CF6)',
+  'linear-gradient(135deg, #3B82F6, #06B6D4)',
+  'linear-gradient(135deg, #10B981, #34d399)',
+  'linear-gradient(135deg, #F59E0B, #FBBF24)',
+  'linear-gradient(135deg, #EF4444, #F87171)',
+  'linear-gradient(135deg, #8B5CF6, #EC4899)',
+];
+function empGradient(name: string) {
+  let h = 0; for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
+  return AVATAR_GRADIENTS[Math.abs(h) % AVATAR_GRADIENTS.length];
+}
+
+
+// ─── 动态执行流：阶段定义 ──────────────────────────────────
+interface PipeStage {
+  id: string; label: string; icon: string; type: 'auto' | 'human';
+  desc: string; logs: Array<{ text: string; kind: 'info' | 'ok' | 'warn' | 'data' }>;
+}
+
+const INSPECT_PIPE: PipeStage[] = [
+  { id: 'trigger',  label: '预警接收', icon: '🔔', type: 'auto',
+    desc: '多源传感器告警聚合上报',
+    logs: [
+      { text: '[光纤] K42+300 振动强度 3.8g，持续 42s，超阈', kind: 'warn' },
+      { text: '[视觉] 摄像头 #12 热成像异常帧 ×8',             kind: 'warn' },
+      { text: '[无人机] UAV-031 发现疑似机械作业',              kind: 'warn' },
+      { text: '预警事件已聚合，编号 EVT-007-0329',              kind: 'ok'   },
+    ],
+  },
+  { id: 'pickup',   label: '员工接单', icon: '🤖', type: 'auto',
+    desc: '智能巡检助手自动接收任务并初始化',
+    logs: [
+      { text: '智能巡检助手已接单',                             kind: 'ok'   },
+      { text: '任务 ID: T-2026-0329-007 已创建',               kind: 'info' },
+      { text: '初始化多源数据接口...',                          kind: 'info' },
+    ],
+  },
+  { id: 'collect',  label: '多源采集', icon: '📡', type: 'auto',
+    desc: '整合光纤 / 机器视觉 / 无人机三路实时数据',
+    logs: [
+      { text: '光纤振动序列已接入 (近10min 原始波形) ✓',       kind: 'ok'   },
+      { text: '机器视觉 8 帧异常图像已接入 ✓',                 kind: 'ok'   },
+      { text: '无人机实时坐标流已接入 ✓',                      kind: 'ok'   },
+      { text: '三路数据时间戳对齐完成',                         kind: 'data' },
+    ],
+  },
+  { id: 'validate', label: '交叉验证', icon: '🔄', type: 'auto',
+    desc: 'AI 模型对三路数据交叉比对，判断一致性',
+    logs: [
+      { text: '模型 A (光纤)   → 置信度 88.4%',               kind: 'data' },
+      { text: '模型 B (视觉)   → 置信度 91.2%',               kind: 'data' },
+      { text: '模型 C (无人机) → 置信度 79.6%',               kind: 'data' },
+      { text: '综合置信度 86.4% > 阈值 75%，预警属实',         kind: 'ok'   },
+    ],
+  },
+  { id: 'human',    label: '人工复核', icon: '👤', type: 'human',
+    desc: '二级预警触发人工复核机制，等待值班人员确认',
+    logs: [
+      { text: '⚠️ 预警达到二级阈值，启动人工复核',             kind: 'warn' },
+      { text: '已推送至值班人员 [张工]',                        kind: 'info' },
+      { text: '等待人工确认中...',                              kind: 'info' },
+      { text: '✅ 张工已确认，预警属实，继续处理',              kind: 'ok'   },
+    ],
+  },
+  { id: 'judge',    label: '研判登记', icon: '🧠', type: 'auto',
+    desc: '综合评级 + 历史比对 + 知识库沉淀',
+    logs: [
+      { text: '风险等级评定: 二级（中度风险）',                 kind: 'data' },
+      { text: '匹配历史相似事件 3 条',                          kind: 'data' },
+      { text: '研判结论已写入知识库',                           kind: 'ok'   },
+      { text: '当前置信度样本已沉淀为训练数据',                 kind: 'info' },
+    ],
+  },
+  { id: 'rule',     label: '派单规则', icon: '📋', type: 'auto',
+    desc: '规则引擎匹配区域/等级/时段最优派单策略',
+    logs: [
+      { text: '规则匹配开始（共 24 条活跃规则）',               kind: 'info' },
+      { text: '命中 R-017: 二级预警 → 维修队 A',               kind: 'data' },
+      { text: '命中 R-022: 光纤异常 → 光纤专项组',             kind: 'data' },
+      { text: '派单方案: 维修队 A + 光纤专项组联合响应',        kind: 'ok'   },
+    ],
+  },
+  { id: 'dispatch', label: '工单派发', icon: '📤', type: 'auto',
+    desc: '生成工单并推送给相关人员，同步监管平台',
+    logs: [
+      { text: '工单 WO-2026-0329-112 已生成',                  kind: 'ok'   },
+      { text: '通知维修队 A (李队长) ✓',                       kind: 'ok'   },
+      { text: '通知光纤专项组 ✓',                              kind: 'ok'   },
+      { text: '上报监管平台 ✓  |  工单状态: 已派发',           kind: 'ok'   },
+    ],
+  },
+];
+
+const GENERIC_PIPE: PipeStage[] = [
+  { id: 'trigger',  label: '任务触发', icon: '📋', type: 'auto',
+    desc: '任务请求已接收，识别类型并分配员工',
+    logs: [
+      { text: '任务请求已接收',                                 kind: 'info' },
+      { text: '任务类型识别完成',                               kind: 'data' },
+      { text: '已分配至对应数字员工',                           kind: 'ok'   },
+    ],
+  },
+  { id: 'pickup',   label: '员工接单', icon: '🤖', type: 'auto',
+    desc: '数字员工确认接单，初始化执行上下文',
+    logs: [
+      { text: '员工接单确认',                                   kind: 'ok'   },
+      { text: '执行上下文初始化完成',                           kind: 'info' },
+      { text: '开始任务执行',                                   kind: 'info' },
+    ],
+  },
+  { id: 'execute',  label: '任务执行', icon: '⚙️', type: 'auto',
+    desc: '按步骤执行核心任务逻辑',
+    logs: [
+      { text: '步骤 1/3: 数据准备完成',                        kind: 'ok'   },
+      { text: '步骤 2/3: 核心处理执行中...',                   kind: 'info' },
+      { text: '步骤 3/3: 结果整理中...',                       kind: 'info' },
+      { text: '核心逻辑执行完成，准确率 96.3%',                kind: 'data' },
+    ],
+  },
+  { id: 'validate', label: '结果校验', icon: '🔍', type: 'auto',
+    desc: '自动校验输出结果的准确性与完整性',
+    logs: [
+      { text: '格式校验通过',                                   kind: 'ok'   },
+      { text: '数据完整性校验通过',                             kind: 'ok'   },
+      { text: '质量评分 96.3 / 100',                           kind: 'data' },
+    ],
+  },
+  { id: 'human',    label: '人工确认', icon: '👤', type: 'human',
+    desc: '关键结果需负责人审核确认后方可交付',
+    logs: [
+      { text: '⚠️ 需人工确认后交付',                           kind: 'warn' },
+      { text: '已推送至负责人',                                 kind: 'info' },
+      { text: '等待确认中...',                                  kind: 'info' },
+      { text: '✅ 负责人已确认，准予交付',                      kind: 'ok'   },
+    ],
+  },
+  { id: 'deliver',  label: '输出交付', icon: '✅', type: 'auto',
+    desc: '结果交付至目标系统，任务完成归档',
+    logs: [
+      { text: '结果已交付至目标系统',                           kind: 'ok'   },
+      { text: '任务归档完成',                                   kind: 'info' },
+      { text: '执行数据已沉淀',                                 kind: 'info' },
+    ],
+  },
+];
+
+// ─── 动态执行流组件 ────────────────────────────────────────
+const LiveExecutionFlow: React.FC<{ task: TaskItem; isInspect: boolean }> = ({ task, isInspect }) => {
+  const stages = isInspect ? INSPECT_PIPE : GENERIC_PIPE;
+
+  // 根据任务状态确定初始已完成阶段数
+  const initDone = React.useMemo(() => {
+    if (task.status === 'done')    return stages.length;
+    if (task.status === 'running') return Math.max(1, Math.floor(stages.length * 0.45));
+    return 0;
+  }, [task.id, task.status, stages.length]);
+
+  const [doneCount,  setDoneCount]  = React.useState(initDone);
+  const [activeIdx,  setActiveIdx]  = React.useState(task.status === 'done' ? -1 : initDone);
+  const [logs,       setLogs]       = React.useState<Array<{ text: string; kind: string; ts: string }>>([]);
+  const [humanOk,   setHumanOk]    = React.useState(task.status === 'done');
+  const [paused,    setPaused]      = React.useState(false);
+  const logRef  = React.useRef<HTMLDivElement>(null);
+  const timerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const getTs = () => new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+  const pushLogs = React.useCallback((stageIdx: number) => {
+    const s = stages[stageIdx];
+    if (!s) return;
+    s.logs.forEach((l, i) => {
+      setTimeout(() => {
+        setLogs(prev => [...prev.slice(-60), { text: l.text, kind: l.kind, ts: getTs() }]);
+      }, i * 340);
+    });
+  }, [stages]);
+
+  // 初始化：已完成阶段的日志一次性填入
+  React.useEffect(() => {
+    const allLogs: Array<{ text: string; kind: string; ts: string }> = [];
+    const cnt = task.status === 'done' ? stages.length : initDone;
+    for (let i = 0; i < cnt; i++) {
+      stages[i].logs.forEach(l => allLogs.push({ text: l.text, kind: l.kind, ts: getTs() }));
+    }
+    setLogs(allLogs);
+    setDoneCount(initDone);
+    setActiveIdx(task.status === 'done' ? -1 : initDone);
+    setHumanOk(task.status === 'done');
+    setPaused(false);
+  }, [task.id]);
+
+  // 自动推进（仅 running / waiting 任务）
+  React.useEffect(() => {
+    if (task.status === 'done' || paused) return;
+    if (activeIdx < 0 || activeIdx >= stages.length) return;
+
+    const cur = stages[activeIdx];
+    if (!cur) return;
+
+    // 人工节点：等待用户操作
+    if (cur.type === 'human' && !humanOk) return;
+
+    const delay = cur.type === 'human' ? 400 : 1800 + Math.random() * 800;
+    timerRef.current = setTimeout(() => {
+      pushLogs(activeIdx);
+      setTimeout(() => {
+        setDoneCount(d => d + 1);
+        setActiveIdx(a => a + 1);
+      }, cur.logs.length * 340 + 200);
+    }, delay);
+
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, [activeIdx, humanOk, paused, task.status]);
+
+  // 滚动日志到底部
+  React.useEffect(() => {
+    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
+  }, [logs]);
+
+  const nodeColor = (idx: number) => {
+    if (idx < doneCount)      return '#16a34a';
+    if (idx === activeIdx)    return stages[idx]?.type === 'human' ? '#d97706' : '#6366F1';
+    return '#d1d5db';
+  };
+  const nodeBg = (idx: number) => {
+    if (idx < doneCount)      return '#f0fdf4';
+    if (idx === activeIdx)    return stages[idx]?.type === 'human' ? '#fefce8' : '#EEF2FF';
+    return '#f9fafb';
+  };
+  const logColor = (kind: string) => ({
+    ok:   '#4ade80', warn: '#fbbf24', data: '#818cf8', info: '#94a3b8',
+  }[kind] ?? '#94a3b8');
+
+  const curStage = activeIdx >= 0 && activeIdx < stages.length ? stages[activeIdx] : null;
+  const isHumanPending = curStage?.type === 'human' && !humanOk;
+
+  return (
+    <div style={{ padding: '14px 18px', background: '#fff', borderBottom: '1px solid #f0f0f0', flexShrink: 0 }}>
+      {/* 标题行 */}
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12, gap: 8 }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>⚡ 执行流程</span>
+        <span style={{ fontSize: 11, color: task.status === 'running' ? '#16a34a' : task.status === 'done' ? '#0284c7' : '#ca8a04', fontWeight: 500 }}>
+          · {task.status === 'running' ? '实时进行中' : task.status === 'done' ? '已完成' : '待执行'}
+        </span>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+          {task.status !== 'done' && (
+            <button
+              onClick={() => setPaused(p => !p)}
+              style={{ padding: '2px 10px', borderRadius: 5, border: '1px solid #e0deff', background: '#f5f4ff', color: '#6366F1', fontSize: 11, cursor: 'pointer', fontWeight: 500 }}
+            >
+              {paused ? '▶ 继续' : '⏸ 暂停'}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ── 节点管道 ── */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', overflowX: 'auto', paddingBottom: 4, gap: 0 }}>
+        {stages.map((stage, idx) => {
+          const done    = idx < doneCount;
+          const active  = idx === activeIdx;
+          const nc      = nodeColor(idx);
+          const nb      = nodeBg(idx);
+          const isHuman = stage.type === 'human';
+          return (
+            <React.Fragment key={stage.id}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0, width: 60 }}>
+                {/* 节点圆 */}
+                <div
+                  className={active ? (isHuman ? 'pipe-node-human' : 'pipe-node-active') : ''}
+                  style={{
+                    width: 38, height: 38, borderRadius: '50%',
+                    background: nb, border: `2px solid ${nc}`,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: done ? 16 : 18, color: done ? nc : undefined,
+                    transition: 'all 0.4s', position: 'relative', cursor: 'default',
+                  }}
+                >
+                  {done ? '✓' : stage.icon}
+                  {/* 人工节点徽标 */}
+                  {isHuman && active && !humanOk && (
+                    <div style={{ position: 'absolute', top: -3, right: -3, width: 10, height: 10, borderRadius: '50%', background: '#d97706', border: '2px solid #fff' }} />
+                  )}
+                </div>
+                {/* 标签 */}
+                <div style={{ fontSize: 10, color: nc, marginTop: 5, fontWeight: active ? 700 : done ? 500 : 400, textAlign: 'center', lineHeight: 1.25, width: 56 }}>
+                  {stage.label}
+                </div>
+                {/* 状态文字 */}
+                <div style={{ fontSize: 9, color: active ? (isHuman && !humanOk ? '#d97706' : '#6366F1') : done ? '#16a34a' : '#d1d5db', marginTop: 2, textAlign: 'center', lineHeight: 1 }}>
+                  {done ? '完成' : active ? (isHuman && !humanOk ? '待确认' : '进行中') : '待执行'}
+                </div>
+              </div>
+
+              {/* 连接线 */}
+              {idx < stages.length - 1 && (
+                <div style={{ flex: 1, minWidth: 8, maxWidth: 22, height: 2, background: '#e5e7eb', marginTop: 18, position: 'relative', overflow: 'visible' }}>
+                  {/* 已完成部分用绿色覆盖 */}
+                  {idx < doneCount - 1 && (
+                    <div style={{ position: 'absolute', inset: 0, background: '#16a34a', borderRadius: 1 }} />
+                  )}
+                  {/* 活动连接线上的流动小球 */}
+                  {idx === doneCount - 1 && task.status !== 'done' && !paused && (
+                    <div className="pipe-flow-dot" style={{ background: stages[idx + 1]?.type === 'human' ? '#d97706' : '#6366F1' }} />
+                  )}
+                </div>
+              )}
+            </React.Fragment>
+          );
+        })}
+      </div>
+
+      {/* ── 当前阶段说明 + 人工确认按钮 ── */}
+      {curStage && (
+        <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 8, border: `1px solid ${isHumanPending ? '#fde68a' : '#e0deff'}`, background: isHumanPending ? '#fefce8' : '#f5f4ff' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <span style={{ fontSize: 12, fontWeight: 600, color: isHumanPending ? '#92400e' : '#4338CA' }}>
+                {isHumanPending ? '⏸ 等待人工确认' : `▶ ${curStage.label} 执行中`}
+              </span>
+              <div style={{ fontSize: 11, color: '#666', marginTop: 2 }}>{curStage.desc}</div>
+            </div>
+            {isHumanPending && (
+              <button
+                onClick={() => setHumanOk(true)}
+                style={{ flexShrink: 0, padding: '5px 14px', borderRadius: 7, border: 'none', background: '#d97706', color: '#fff', fontSize: 11, fontWeight: 600, cursor: 'pointer', marginLeft: 12 }}
+              >
+                ✅ 确认通过
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── 实时执行日志（暗色终端） ── */}
+      <div
+        ref={logRef}
+        style={{ marginTop: 10, height: 88, overflowY: 'auto', background: '#0f172a', borderRadius: 8, padding: '7px 12px', fontFamily: '"Fira Mono", "Courier New", monospace' }}
+      >
+        {logs.map((l, i) => (
+          <div key={i} className="pipe-log-entry" style={{ fontSize: 11, color: logColor(l.kind), lineHeight: 1.75 }}>
+            <span style={{ color: '#334155', userSelect: 'none', marginRight: 8 }}>{l.ts}</span>{l.text}
+          </div>
+        ))}
+        {task.status === 'running' && !paused && (
+          <span style={{ fontSize: 11, color: '#4ade80' }}>▋</span>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ─── 数字员工前台面板 ────────────────────────────────────────
+export const DigitalEmployeePanel: React.FC = () => {
+  const [search, setSearch] = React.useState('');
+  const [selectedEmp, setSelectedEmp] = React.useState<EmployeeRecord | null>(null);
+  const [chatInput, setChatInput] = React.useState('');
+  const [chatMsgs, setChatMsgs] = React.useState<Array<{ role: 'user' | 'bot'; text: string; time: string }>>([]);
+  const [sending, setSending] = React.useState(false);
+  const [sidebarWidth, setSidebarWidth] = React.useState(232);
+  const [ratingOpen, setRatingOpen] = React.useState(false);
+  const [hoverRating, setHoverRating] = React.useState(0);
+  const [submittedRating, setSubmittedRating] = React.useState(0);
+  // 当前查看的任务（点击左侧任务卡片后在右侧显示详情）
+  const [selectedTaskId, setSelectedTaskId] = React.useState<string | null>(null);
+  const chatEndRef = React.useRef<HTMLDivElement>(null);
+  const rightPanelRef = React.useRef<HTMLDivElement>(null);
+
+  const employees = employeeStore.getEmployees().filter(e => e.status === 'published');
+  const filtered = employees.filter(e =>
+    !search || e.name.includes(search) || e.dept.includes(search) || e.domain.includes(search)
+  );
+  const tasks = selectedEmp ? (MOCK_TASKS[selectedEmp.id] ?? []) : [];
+  const selectedTask = tasks.find(t => t.id === selectedTaskId) || null;
+
+  React.useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chatMsgs, sending]);
+
+  const getTime = () => new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+
+  const handleSend = () => {
+    const text = chatInput.trim();
+    if (!text || !selectedEmp || sending) return;
+    const prefix = selectedTask ? `[关于任务「${selectedTask.title.slice(0,12)}…」] ` : '';
+    setChatMsgs(prev => [...prev, { role: 'user', text: prefix + text, time: getTime() }]);
+    setChatInput('');
+    setSending(true);
+    setTimeout(() => {
+      const name = selectedEmp.name;
+      const replies = selectedTask ? [
+        `已收到您关于「${selectedTask.title.slice(0,16)}…」的问题。当前任务状态：${selectedTask.status === 'running' ? '执行中' : selectedTask.status === 'done' ? '已完成' : '等待中'}，已完成 ${selectedTask.steps.filter(s=>s.status==='done').length}/${selectedTask.steps.length} 个步骤。${text}`,
+        `针对该任务，我来为您详细解答：${text}。当前任务进展良好，后续步骤将按计划推进。`,
+      ] : [
+        `好的，我已收到您的任务：「${text}」，正在处理中，稍后会将结果反馈给您。`,
+        `明白了，我将立即开始处理：${text}。预计完成时间 2-3 分钟，完成后会通知您。`,
+        `任务已接收！我会按照您的要求完成「${text}」，完成后主动告知结果。`,
+      ];
+      setChatMsgs(prev => [...prev, { role: 'bot', text: replies[Math.floor(Math.random() * replies.length)], time: getTime() }]);
+      setSending(false);
+    }, 800 + Math.random() * 600);
+  };
+
+  // ── 拖拽调整侧边栏宽度 ──
+  const startResizeSidebar = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = sidebarWidth;
+    const onMove = (ev: MouseEvent) => { setSidebarWidth(Math.max(160, Math.min(380, startW + ev.clientX - startX))); };
+    const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  };
+
+  // ── 步骤状态色 ──
+  const stepDot: Record<string, string> = { done: '#0284c7', running: '#16a34a', waiting: '#d1d5db', failed: '#e11d48' };
+  const stepBg:  Record<string, string> = { done: '#f0f9ff', running: '#f0fdf4', waiting: '#fafafa', failed: '#fff1f2' };
+  const stepClr: Record<string, string> = { done: '#0284c7', running: '#16a34a', waiting: '#9ca3af', failed: '#e11d48' };
+  const stepLbl: Record<string, string> = { done: '✓ 完成', running: '⟳ 进行中', waiting: '○ 待执行', failed: '✗ 失败' };
+  const taskStatusCfg: Record<string, { bg: string; color: string; label: string }> = {
+    running: { bg: '#f0fdf4', color: '#16a34a', label: '执行中' },
+    done:    { bg: '#f0f9ff', color: '#0284c7', label: '已完成' },
+    failed:  { bg: '#fff1f2', color: '#e11d48', label: '失败'   },
+    waiting: { bg: '#fefce8', color: '#ca8a04', label: '等待中' },
+  };
+
+  // ─────────────────────────────────────────────
+  //  任务详情渲染（通用 + 智能巡检专属）
+  // ─────────────────────────────────────────────
+  const renderTaskDetail = (task: TaskItem) => {
+    const cfg = taskStatusCfg[task.status] ?? taskStatusCfg.waiting;
+    const isInspect = selectedEmp?.id === 'de-007';
+
+    // ── 通用任务头部 ──────────────────────────────
+    const TaskHeader = () => (
+      <div style={{ padding: '16px 20px', background: 'linear-gradient(135deg,#f8f7ff,#f0f9ff)', borderBottom: '1px solid #e8e8f0', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 }}>
+          <div style={{ flex: 1, marginRight: 12 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a', lineHeight: 1.5, marginBottom: 6 }}>{task.title}</div>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 10, background: cfg.bg, color: cfg.color, fontWeight: 600, border: `1px solid ${cfg.color}30` }}>{cfg.label}</span>
+              <span style={{ fontSize: 11, color: '#888' }}>🕐 {task.time}</span>
+              {task.duration && <span style={{ fontSize: 11, color: '#888' }}>⏱ {task.duration}</span>}
+            </div>
+          </div>
+          <button onClick={() => setSelectedTaskId(null)} style={{ flexShrink: 0, padding: '5px 12px', borderRadius: 7, border: '1px solid #e0deff', background: '#fff', color: '#6366F1', fontSize: 11, cursor: 'pointer', fontWeight: 500 }}>← 返回</button>
+        </div>
+        {task.result && (
+          <div style={{ padding: '7px 12px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, fontSize: 12, color: '#166534' }}>💡 {task.result}</div>
+        )}
+      </div>
+    );
+
+    // ══════════════════════════════════════════════
+    //  智能巡检助手专属可视化
+    // ══════════════════════════════════════════════
+    if (isInspect) {
+
+      // ── t-701 光纤预警研判：瀑布图 + 视频监控复核 ──────────────
+      if (task.id === 't-701') {
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 0, overflowY: 'auto' }}>
+            <TaskHeader />
+            <LiveExecutionFlow task={task} isInspect={isInspect} />
+            {/* 瀑布图复核画面 */}
+            <div style={{ padding: '16px 20px', background: '#fff', borderBottom: '1px solid #f0f0f0' }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                📊 光纤瀑布图 · 车辆穿行/伴行报警复核
+                <span style={{ marginLeft: 'auto', fontSize: 10, padding: '2px 8px', borderRadius: 6, background: '#fef2f2', color: '#dc2626', fontWeight: 600 }}>⚠ 二级预警触发</span>
+              </div>
+              <div style={{ fontSize: 11, color: '#aaa', marginBottom: 12 }}>传感器 KM-204 · 里程桩 K13530~K13928 · 时间段 09:28:08–09:38:07</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div style={{ borderRadius: 10, overflow: 'hidden', border: '1.5px solid #ef444440' }}>
+                  <img src="/inspect/waterfall1.png" alt="瀑布图1" style={{ width: '100%', display: 'block', objectFit: 'cover' }} />
+                  <div style={{ padding: '7px 10px', background: '#0f172a', fontSize: 11, fontWeight: 600, color: '#f87171' }}>
+                    穿行 & 伴行复合报警
+                    <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 400, marginTop: 2 }}>K13530–K13928 · 09:28–09:38</div>
+                  </div>
+                </div>
+                <div style={{ borderRadius: 10, overflow: 'hidden', border: '1.5px solid #f59e0b40' }}>
+                  <img src="/inspect/waterfall2.png" alt="瀑布图2" style={{ width: '100%', display: 'block', objectFit: 'cover' }} />
+                  <div style={{ padding: '7px 10px', background: '#0f172a', fontSize: 11, fontWeight: 600, color: '#fbbf24' }}>
+                    伴行告警细节
+                    <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 400, marginTop: 2 }}>信号增强段 · 高频振动特征</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            {/* 视频监控复核 */}
+            <div style={{ padding: '16px 20px', background: '#fff', borderBottom: '1px solid #f0f0f0' }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                📹 视频监控复核 · 光纤车辆经过报警验证
+                <span style={{ marginLeft: 'auto', fontSize: 10, padding: '2px 8px', borderRadius: 6, background: '#f0fdf4', color: '#16a34a', fontWeight: 600 }}>已确认车辆过境</span>
+              </div>
+              <div style={{ fontSize: 11, color: '#aaa', marginBottom: 12 }}>摄像机 CAM-140+150 · 鲁皖二期 · 2025年12月28日 06:16:20</div>
+              <div style={{ borderRadius: 10, overflow: 'hidden', border: '1.5px solid #3b82f640' }}>
+                <img src="/inspect/cctv.png" alt="视频监控复核" style={{ width: '100%', display: 'block', objectFit: 'cover', maxHeight: 200 }} />
+                <div style={{ padding: '8px 12px', background: '#0f172a', display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontSize: 10, color: '#94a3b8' }}>📍 鲁皖二期-潍城区亮接口街办贾家村</span>
+                  <span style={{ marginLeft: 'auto', fontSize: 10, color: '#22d3ee', fontWeight: 600 }}>里程 K140+150</span>
+                </div>
+              </div>
+            </div>
+            {/* 告警汇总 */}
+            <div style={{ padding: '14px 20px', background: '#fff' }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', marginBottom: 10 }}>🚨 多源告警汇总</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+                {[
+                  { icon:'🔔', label:'光纤告警', value:'3 条', sub:'穿行+伴行复合触发', color:'#EF4444' },
+                  { icon:'📡', label:'预警级别', value:'二级', sub:'视频监控已确认', color:'#F59E0B' },
+                  { icon:'📋', label:'工单状态', value:'已派发', sub:'维修队A · 15min前', color:'#10B981' },
+                ].map(d => (
+                  <div key={d.label} style={{ padding: '10px 12px', background: `${d.color}08`, borderRadius: 10, border: `1px solid ${d.color}20` }}>
+                    <div style={{ fontSize: 20, marginBottom: 5 }}>{d.icon}</div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: d.color, marginBottom: 2 }}>{d.value}</div>
+                    <div style={{ fontSize: 11, color: '#555', fontWeight: 500, marginBottom: 2 }}>{d.label}</div>
+                    <div style={{ fontSize: 10, color: '#aaa' }}>{d.sub}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      // ── t-702 无人机巡护：真实航拍图像 ──────────────
+      if (task.id === 't-702') {
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 0, overflowY: 'auto' }}>
+            <TaskHeader />
+            <LiveExecutionFlow task={task} isInspect={isInspect} />
+            {/* 无人机航拍图像 */}
+            <div style={{ padding: '16px 20px', background: '#fff', borderBottom: '1px solid #f0f0f0' }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                🚁 无人机复核 · 车辆经过报警画面
+                <span style={{ marginLeft: 'auto', fontSize: 10, padding: '2px 8px', borderRadius: 6, background: '#fef2f2', color: '#dc2626', fontWeight: 600 }}>目标已识别</span>
+              </div>
+              <div style={{ fontSize: 11, color: '#aaa', marginBottom: 12 }}>无人机编号 UAV-031 · 飞行高度 80m · 航速 12m/s · AI置信度 94.3%</div>
+              <div style={{ borderRadius: 10, overflow: 'hidden', border: '1.5px solid #3b82f640' }}>
+                <img src="/inspect/drone.png" alt="无人机复核画面" style={{ width: '100%', display: 'block', objectFit: 'cover' }} />
+                <div style={{ padding: '9px 14px', background: '#0f172a', display: 'flex', gap: 12, alignItems: 'center' }}>
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    <span style={{ fontSize: 10, color: '#4ade80', fontWeight: 600, padding: '2px 8px', borderRadius: 4, border: '1px solid #4ade80' }}>小汽车 ×2</span>
+                    <span style={{ fontSize: 10, color: '#60a5fa', fontWeight: 600, padding: '2px 8px', borderRadius: 4, border: '1px solid #60a5fa' }}>大货车 ×1</span>
+                  </div>
+                  <span style={{ marginLeft: 'auto', fontSize: 10, color: '#94a3b8' }}>📍 K147+320 · 确认车辆过境</span>
+                </div>
+              </div>
+            </div>
+            {/* 检测统计 */}
+            <div style={{ padding: '14px 20px', background: '#fff' }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', marginBottom: 10 }}>📊 巡护检测统计</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {[
+                  { label: '扫描里程', value: '12.4 km', bar: 82, color: '#6366F1' },
+                  { label: '图像帧数', value: '3,847 帧', bar: 100, color: '#10B981' },
+                  { label: '目标识别', value: '3 辆车', bar: 60, color: '#F59E0B' },
+                  { label: '检测置信度', value: '94.3%', bar: 94, color: '#3B82F6' },
+                ].map(r => (
+                  <div key={r.label} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ width: 64, fontSize: 11, color: '#666', flexShrink: 0 }}>{r.label}</span>
+                    <div style={{ flex: 1, height: 7, background: '#f0f0f0', borderRadius: 4, overflow: 'hidden' }}>
+                      <div style={{ width: `${r.bar}%`, height: '100%', background: r.color, borderRadius: 4 }} />
+                    </div>
+                    <span style={{ width: 62, fontSize: 11, fontWeight: 600, color: r.color, textAlign: 'right', flexShrink: 0 }}>{r.value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      // ── t-703 工单闭环 ────────────────────────────
+      if (task.id === 't-703') {
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 0, overflowY: 'auto' }}>
+            <TaskHeader />
+            <LiveExecutionFlow task={task} isInspect={isInspect} />
+            <div style={{ padding: '16px 20px', background: '#fff', borderBottom: '1px solid #f0f0f0' }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', marginBottom: 12 }}>📋 工单执行状态</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+                {[
+                  { label: '工单编号', value: 'WO-20260320-047', color: '#6366F1' },
+                  { label: '当前状态', value: '现场核查中', color: '#F59E0B' },
+                  { label: '派单时间', value: '11:08:32', color: '#3B82F6' },
+                  { label: '响应时效', value: '18 分钟', color: '#10B981' },
+                  { label: '执行队组', value: '维修队 A·3人', color: '#8B5CF6' },
+                  { label: '闭环率', value: '62%', color: '#EF4444' },
+                ].map(d => (
+                  <div key={d.label} style={{ padding: '9px 12px', background: '#f9fafb', borderRadius: 9, border: '1px solid #f0f0f0' }}>
+                    <div style={{ fontSize: 10, color: '#aaa', marginBottom: 3 }}>{d.label}</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: d.color }}>{d.value}</div>
+                  </div>
+                ))}
+              </div>
+              {/* 工单流转时间线 */}
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 10 }}>工单流转记录</div>
+              {[
+                { time: '10:52', event: '光纤预警触发，系统自动生成工单', status: 'done', icon: '🔔' },
+                { time: '11:08', event: '工单派发至维修队 A，队长张工接单', status: 'done', icon: '📤' },
+                { time: '11:26', event: '队员抵达现场 K147+320，开始核查', status: 'running', icon: '🔧' },
+                { time: '—', event: '现场核查结论待上传', status: 'waiting', icon: '📝' },
+                { time: '—', event: '工单闭环确认', status: 'waiting', icon: '✅' },
+              ].map((ev, idx) => (
+                <div key={idx} style={{ display: 'flex', gap: 10, marginBottom: idx < 4 ? 8 : 0 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 20, flexShrink: 0 }}>
+                    <div style={{ width: 9, height: 9, borderRadius: '50%', background: ev.status==='done'?'#10B981':ev.status==='running'?'#F59E0B':'#e5e7eb', marginTop: 3, boxShadow: ev.status==='running'?'0 0 0 3px #F59E0B30':'none' }} />
+                    {idx < 4 && <div style={{ width: 1, flex: 1, background: '#e5e7eb', marginTop: 2, marginBottom: 2, minHeight: 12 }} />}
+                  </div>
+                  <div style={{ flex: 1, paddingBottom: 2 }}>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <span style={{ fontSize: 10, color: '#aaa', width: 36, flexShrink: 0 }}>{ev.time}</span>
+                      <span style={{ fontSize: 11, color: ev.status==='done'?'#374151':ev.status==='running'?'#d97706':'#9ca3af' }}>{ev.icon} {ev.event}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      }
+
+      // ── t-705 经验沉淀 ────────────────────────────
+      if (task.id === 't-705') {
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 0, overflowY: 'auto' }}>
+            <TaskHeader />
+            <LiveExecutionFlow task={task} isInspect={isInspect} />
+            <div style={{ padding: '16px 20px', background: '#fff', borderBottom: '1px solid #f0f0f0' }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', marginBottom: 12 }}>📚 知识库沉淀</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+                {[
+                  { tag: '规律', content: '每周一、四为告警高发日，凌晨 2–4 时为高风险时段', color: '#6366F1' },
+                  { tag: '预警', content: '光纤振动强度 > 0.8g 且持续 >3s，阈值调整后误报率降低 40%', color: '#EF4444' },
+                  { tag: '优化', content: 'AI 模型迭代后复合型预警准确率提升至 91.2%', color: '#10B981' },
+                  { tag: '经验', content: '机械施工振动主频集中 70–90Hz，可与地质沉降特征有效区分', color: '#F59E0B' },
+                ].map(k => (
+                  <div key={k.tag} style={{ display: 'flex', gap: 10, padding: '10px 13px', background: '#fafafa', borderRadius: 9, border: `1px solid ${k.color}20` }}>
+                    <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 5, background: `${k.color}15`, color: k.color, fontWeight: 700, flexShrink: 0, height: 'fit-content', marginTop: 2 }}>{k.tag}</span>
+                    <span style={{ fontSize: 12, color: '#374151', lineHeight: 1.7 }}>{k.content}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            {/* 历史复盘柱状图 */}
+            <div style={{ padding: '14px 20px', background: '#fff' }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 10 }}>月度告警复盘（近6月）</div>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end', height: 60 }}>
+                {[18,24,15,31,27,22].map((v,i)=>(
+                  <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                    <div style={{ width: '100%', background: i===3?'#EF4444':'#6366F1', opacity: 0.7+(i===3?0.2:0), borderRadius: '4px 4px 0 0', height: v*1.8 }} />
+                    <div style={{ fontSize: 9, color: '#bbb' }}>{['10','11','12','1','2','3'][i]}月</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      // ── 其他巡检任务（t-704 等） ───────────────────
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 0, overflowY: 'auto' }}>
+          <TaskHeader />
+          <LiveExecutionFlow task={task} isInspect={isInspect} />
+          <div style={{ padding: '16px 20px', background: '#fff' }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', marginBottom: 12 }}>🔍 任务执行过程</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+              {task.steps.map((step, idx) => {
+                const isLast = idx === task.steps.length - 1;
+                const dot = stepDot[step.status] ?? '#d1d5db';
+                const bg  = stepBg[step.status]  ?? '#fafafa';
+                const clr = stepClr[step.status] ?? '#9ca3af';
+                return (
+                  <div key={step.id} style={{ display: 'flex', gap: 0 }}>
+                    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', width:22, flexShrink:0 }}>
+                      <div style={{ width:10, height:10, borderRadius:'50%', background:dot, marginTop:5, flexShrink:0, boxShadow:step.status==='running'?`0 0 0 4px ${dot}30`:'none' }} />
+                      {!isLast && <div style={{ width:2, flex:1, background:'#e5e7eb', marginTop:2, marginBottom:2, minHeight:14 }} />}
+                    </div>
+                    <div style={{ flex:1, paddingLeft:10, paddingBottom: isLast?0:16 }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:3 }}>
+                        <span style={{ fontSize:12, fontWeight:600, color:clr }}>{step.name}</span>
+                        <span style={{ fontSize:10, padding:'1px 6px', borderRadius:4, background:bg, color:clr, fontWeight:500 }}>{stepLbl[step.status]}</span>
+                        {step.time && <span style={{ fontSize:10, color:'#bbb', marginLeft:'auto' }}>{step.time}</span>}
+                      </div>
+                      <div style={{ fontSize:12, color:'#6b7280', lineHeight:1.65, marginBottom:step.output?6:0 }}>{step.desc}</div>
+                      {step.output && <div style={{ fontSize:11, color:clr, background:bg, padding:'6px 10px', borderRadius:7, lineHeight:1.65, borderLeft:`3px solid ${dot}` }}>{step.output}</div>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ══════════════════════════════════════════════
+    //  通用任务详情（步骤时间线）
+    // ══════════════════════════════════════════════
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 0, overflowY: 'auto' }}>
+        <TaskHeader />
+        <LiveExecutionFlow task={task} isInspect={isInspect} />
+        <div style={{ padding: '16px 20px', background: '#fff' }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', marginBottom: 12 }}>📋 执行步骤</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+            {task.steps.map((step, idx) => {
+              const isLast = idx === task.steps.length - 1;
+              const dot = stepDot[step.status] ?? '#d1d5db';
+              const bg  = stepBg[step.status]  ?? '#fafafa';
+              const clr = stepClr[step.status] ?? '#9ca3af';
+              return (
+                <div key={step.id} style={{ display: 'flex', gap: 0 }}>
+                  <div style={{ display:'flex', flexDirection:'column', alignItems:'center', width:22, flexShrink:0 }}>
+                    <div style={{ width:10, height:10, borderRadius:'50%', background:dot, marginTop:5, flexShrink:0, boxShadow:step.status==='running'?`0 0 0 4px ${dot}30`:'none' }} />
+                    {!isLast && <div style={{ width:2, flex:1, background:'#e5e7eb', marginTop:2, marginBottom:2, minHeight:14 }} />}
+                  </div>
+                  <div style={{ flex:1, paddingLeft:10, paddingBottom: isLast?0:16 }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:3 }}>
+                      <span style={{ fontSize:12, fontWeight:600, color:clr }}>{step.name}</span>
+                      <span style={{ fontSize:10, padding:'1px 6px', borderRadius:4, background:bg, color:clr, fontWeight:500 }}>{stepLbl[step.status]}</span>
+                      {step.time && <span style={{ fontSize:10, color:'#bbb', marginLeft:'auto' }}>{step.time}</span>}
+                    </div>
+                    <div style={{ fontSize:12, color:'#6b7280', lineHeight:1.65, marginBottom:step.output?6:0 }}>{step.desc}</div>
+                    {step.output && <div style={{ fontSize:11, color:clr, background:bg, padding:'6px 10px', borderRadius:7, lineHeight:1.65, borderLeft:`3px solid ${dot}` }}>{step.output}</div>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+
+  return (
+    <div style={{ width: '100%', display: 'flex', gap: 0, height: '100%', alignSelf: 'stretch', flex: 1, minHeight: 0 }}>
+
+      {/* ── 左侧：员工列表 ── */}
+      <div style={{ width: sidebarWidth, flexShrink: 0, display: 'flex', flexDirection: 'column', background: '#fff', borderRadius: '12px 0 0 12px', border: '1px solid #f0f0f0' }}>
+        {/* 标题 + 搜索 */}
+        <div style={{ padding: '16px 14px 12px', borderBottom: '1px solid #f0f0f0', flexShrink: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a', marginBottom: 10 }}>🤖 数字员工</div>
+          <input
+            placeholder="搜索员工..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            style={{ width: '100%', padding: '7px 10px', borderRadius: 7, border: '1px solid #e8e8e8', fontSize: 12, outline: 'none', boxSizing: 'border-box', background: '#fafafa' }}
+          />
+        </div>
+        {/* 员工列表 */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
+          {filtered.map(emp => {
+            const isActive = selectedEmp?.id === emp.id;
+            const empTasks = MOCK_TASKS[emp.id] ?? [];
+            const running = empTasks.filter(t => t.status === 'running').length;
+            return (
+              <div
+                key={emp.id}
+                onClick={() => {
+                  setSelectedEmp(emp);
+                  setSelectedTaskId(null);
+                  setChatMsgs([]);
+                  setRatingOpen(false);
+                  setSubmittedRating(0);
+                  setHoverRating(0);
+                }}
+                style={{ padding: '10px 14px', cursor: 'pointer', transition: 'all 0.15s', background: isActive ? 'linear-gradient(135deg, #EEF2FF, #F5F3FF)' : 'transparent', borderLeft: isActive ? '3px solid #6366F1' : '3px solid transparent', borderBottom: '1px solid #f5f5f5' }}
+                onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLDivElement).style.background = '#fafbff'; }}
+                onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                  <div style={{ position: 'relative', flexShrink: 0 }}>
+                    <div style={{ width: 34, height: 34, borderRadius: 9, background: empGradient(emp.name), display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 13, fontWeight: 700 }}>
+                      {emp.name.charAt(0)}
+                      {running > 0 && <span style={{ position: 'absolute', top: -3, right: -3, width: 8, height: 8, borderRadius: '50%', background: '#22c55e', border: '1.5px solid #fff' }} />}
+                    </div>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: '#1a1a1a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{emp.name}</div>
+                    <div style={{ fontSize: 10, color: '#aaa', marginTop: 1 }}>{emp.domain}</div>
+                  </div>
+                </div>
+                {empTasks.length > 0 && (
+                  <div style={{ marginTop: 7, display: 'flex', gap: 4 }}>
+                    {running > 0 && <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 8, background: '#f0fdf4', color: '#16a34a', fontWeight: 500 }}>执行中 {running}</span>}
+                    <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 8, background: '#f5f5f5', color: '#888' }}>共 {empTasks.length} 任务</span>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {filtered.length === 0 && <div style={{ textAlign: 'center', padding: '30px 0', color: '#bbb', fontSize: 12 }}>暂无员工</div>}
+        </div>
+      </div>
+
+      {/* ── 侧���栏拖拽手柄 ── */}
+      <div
+        onMouseDown={startResizeSidebar}
+        style={{ width: 5, flexShrink: 0, cursor: 'col-resize', background: 'transparent', transition: 'background 0.15s', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10 }}
+        onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = 'rgba(199,210,254,0.5)'; }}
+        onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}
+      >
+        <div style={{ width: 2, height: 40, borderRadius: 2, background: '#C7D2FE', opacity: 0.7 }} />
+      </div>
+
+      {/* ── 右侧：详情面板 ── */}
+      {selectedEmp ? (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', border: '1px solid #f0f0f0', borderLeft: 'none', borderRadius: '0 12px 12px 0', overflow: 'hidden', background: '#f7f8fc', minHeight: 0 }}>
+
+          {/* ── 员工信息栏 ── */}
+          <div style={{ background: '#fff', borderBottom: '1px solid #f0f0f0', flexShrink: 0 }}>
+            <div style={{ padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 14 }}>
+              <div style={{ width: 48, height: 48, borderRadius: 13, flexShrink: 0, background: empGradient(selectedEmp.name), display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 18, fontWeight: 700, boxShadow: '0 3px 10px rgba(99,102,241,0.25)' }}>
+                {selectedEmp.name.charAt(0)}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+                  <span style={{ fontSize: 16, fontWeight: 700, color: '#1a1a1a' }}>{selectedEmp.name}</span>
+                  <span style={{ fontSize: 10, padding: '2px 9px', borderRadius: 10, background: '#f0fdf4', color: '#16a34a', fontWeight: 600, border: '1px solid #bbf7d0', letterSpacing: 0.3 }}>● 运行中</span>
+                </div>
+                <div style={{ fontSize: 11, color: '#aaa' }}>
+                  {selectedEmp.dept}<span style={{ margin: '0 5px', opacity: 0.4 }}>·</span>{selectedEmp.domain}<span style={{ margin: '0 5px', opacity: 0.4 }}>·</span>{selectedEmp.version}
+                </div>
+              </div>
+            </div>
+            <div style={{ padding: '8px 20px 11px 82px', background: '#FAFBFF', borderTop: '1px solid #F3F4F6' }}>
+              <span style={{ fontSize: 12, color: '#6B7280', lineHeight: 1.7 }}>
+                <span style={{ color: '#9CA3AF', marginRight: 5 }}>📌</span>{selectedEmp.description}
+              </span>
+            </div>
+          </div>
+
+          {/* ── 主体：左任务列表 + 右详情/对话 ── */}
+          <div ref={rightPanelRef} style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
+
+            {/* 任务执行状态列表 */}
+            <div style={{ width: 280, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRight: '1px solid #f0f0f0', background: '#fff' }}>
+              <div style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: '#1a1a1a', borderBottom: '1px solid #f0f0f0', background: '#fff', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span>📋</span> 任务执行状态
+                <span style={{ marginLeft: 'auto', fontSize: 11, color: '#bbb', fontWeight: 400 }}>近期 {tasks.length} 条</span>
+              </div>
+              <div style={{ flex: 1, overflowY: 'auto', padding: '8px', display: 'flex', flexDirection: 'column', gap: 7 }}>
+                {tasks.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '48px 0', color: '#bbb', fontSize: 13 }}>
+                    <div style={{ fontSize: 28, marginBottom: 8 }}>📭</div>暂无任务记录
+                  </div>
+                ) : tasks.map(task => {
+                  const cfg = taskStatusCfg[task.status] ?? taskStatusCfg.waiting;
+                  const isSelected = selectedTaskId === task.id;
+                  return (
+                    <div
+                      key={task.id}
+                      onClick={() => setSelectedTaskId(isSelected ? null : task.id)}
+                      style={{ background: isSelected ? 'linear-gradient(135deg,#EEF2FF,#F5F3FF)' : '#fafafa', borderRadius: 9, border: isSelected ? `1.5px solid #6366F1` : `1px solid ${cfg.color}28`, cursor: 'pointer', transition: 'all 0.15s', padding: '10px 12px' }}
+                      onMouseEnter={e => { if (!isSelected) (e.currentTarget as HTMLDivElement).style.background = '#f0f0fa'; }}
+                      onMouseLeave={e => { if (!isSelected) (e.currentTarget as HTMLDivElement).style.background = '#fafafa'; }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 7, marginBottom: 6 }}>
+                        <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 7, background: cfg.bg, color: cfg.color, fontWeight: 600, flexShrink: 0, marginTop: 1 }}>{cfg.label}</span>
+                        <div style={{ flex: 1, fontSize: 12, color: isSelected ? '#4338CA' : '#333', lineHeight: 1.5, fontWeight: isSelected ? 600 : 500 }}>{task.title}</div>
+                      </div>
+                      {task.result && !isSelected && (
+                        <div style={{ fontSize: 10, color: '#666', marginBottom: 5, lineHeight: 1.4, padding: '4px 7px', background: '#fff', borderRadius: 5 }}>💡 {task.result}</div>
+                      )}
+                      <div style={{ display: 'flex', gap: 8, fontSize: 10, color: '#bbb', alignItems: 'center' }}>
+                        <span>🕐 {task.time}</span>
+                        {task.duration && <span>⏱ {task.duration}</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 右侧：任务详情 + 对话区 */}
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
+              {/* 头部：对话 / 任务详情 标签 */}
+              <div style={{ padding: '10px 16px', fontSize: 13, fontWeight: 600, color: '#1a1a1a', borderBottom: '1px solid #f0f0f0', background: '#fff', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+                {selectedTask ? (
+                  <>
+                    <span>📄</span> 任务详情
+                    <span style={{ fontSize: 11, color: '#6366F1', fontWeight: 400, marginLeft: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 200 }}>· {selectedTask.title}</span>
+                  </>
+                ) : (
+                  <><span>💬</span> 对话</>
+                )}
+                <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {chatMsgs.length > 0 && !ratingOpen && (
+                    <div
+                      onClick={() => { setRatingOpen(true); setHoverRating(0); }}
+                      style={{ fontSize: 11, padding: '3px 10px', borderRadius: 8, cursor: 'pointer', background: submittedRating > 0 ? '#FFFBEB' : '#f5f5f5', color: submittedRating > 0 ? '#B45309' : '#888', border: submittedRating > 0 ? '1px solid #FDE68A' : '1px solid transparent', fontWeight: submittedRating > 0 ? 600 : 400 }}
+                      onMouseEnter={e => { if (!submittedRating) (e.currentTarget as HTMLDivElement).style.background = '#EEF2FF'; }}
+                      onMouseLeave={e => { if (!submittedRating) (e.currentTarget as HTMLDivElement).style.background = '#f5f5f5'; }}
+                    >
+                      {submittedRating > 0 ? `${'★'.repeat(submittedRating)}${'☆'.repeat(5 - submittedRating)}` : '评价对话'}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* 内容区：任务详情（可滚动）+ 对话消息 */}
+              <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                {/* 任务详情卡 */}
+                {selectedTask && renderTaskDetail(selectedTask)}
+
+                {/* 对话消息 */}
+                <div style={{ flex: 1, padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 12, minHeight: selectedTask ? 80 : undefined }}>
+                  {chatMsgs.length === 0 && (
+                    <div style={{ textAlign: 'center', color: '#bbb', padding: selectedTask ? '16px 0' : '32px 0' }}>
+                      {!selectedTask && <div style={{ fontSize: 28, marginBottom: 8 }}>💬</div>}
+                      <div style={{ fontSize: 13, marginBottom: selectedTask ? 0 : 16, color: '#bbb' }}>
+                        {selectedTask ? `可在此与 ${selectedEmp.name} 就该任务进行对话` : `向 ${selectedEmp.name} 发送任务或提问`}
+                      </div>
+                      {!selectedTask && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 7, textAlign: 'left', maxWidth: 280, margin: '0 auto' }}>
+                          {['帮我生成今日工作汇报', '当前有哪些任务在执行？', '最近一次任务的结果是什么？'].map(tip => (
+                            <div key={tip} onClick={() => setChatInput(tip)} style={{ padding: '8px 13px', borderRadius: 8, background: '#f5f4ff', color: '#6366F1', fontSize: 12, cursor: 'pointer', border: '1px solid #e0deff' }}>{tip}</div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {chatMsgs.map((msg, i) => (
+                    <div key={i} style={{ display: 'flex', flexDirection: msg.role === 'user' ? 'row-reverse' : 'row', gap: 8, alignItems: 'flex-end' }}>
+                      {msg.role === 'bot' && (
+                        <div style={{ width: 28, height: 28, borderRadius: 8, background: empGradient(selectedEmp.name), display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
+                          {selectedEmp.name.charAt(0)}
+                        </div>
+                      )}
+                      <div style={{ maxWidth: '80%' }}>
+                        <div style={{ padding: '9px 13px', fontSize: 13, lineHeight: 1.6, borderRadius: msg.role === 'user' ? '14px 14px 2px 14px' : '14px 14px 14px 2px', background: msg.role === 'user' ? 'linear-gradient(135deg, #6366F1, #8B5CF6)' : '#fff', color: msg.role === 'user' ? '#fff' : '#1a1a1a', border: msg.role === 'bot' ? '1px solid #ebebeb' : 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+                          {msg.text}
+                        </div>
+                        <div style={{ fontSize: 10, color: '#ccc', marginTop: 3, textAlign: msg.role === 'user' ? 'right' : 'left' }}>{msg.time}</div>
+                      </div>
+                    </div>
+                  ))}
+                  {sending && (
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+                      <div style={{ width: 28, height: 28, borderRadius: 8, background: empGradient(selectedEmp.name), display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 12, fontWeight: 700 }}>
+                        {selectedEmp.name.charAt(0)}
+                      </div>
+                      <div style={{ padding: '11px 15px', background: '#fff', borderRadius: '14px 14px 14px 2px', border: '1px solid #ebebeb' }}>
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <div className="ai-typing-dot" /><div className="ai-typing-dot" /><div className="ai-typing-dot" />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  <div ref={chatEndRef} />
+                </div>
+              </div>
+
+              {/* 对话评分面板 */}
+              {ratingOpen && (
+                <div style={{ padding: '14px 16px', background: '#FFFBEB', borderTop: '1px solid #FDE68A', flexShrink: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: '#92400E' }}>为本次对话评分</span>
+                    <span onClick={() => setRatingOpen(false)} style={{ fontSize: 12, color: '#bbb', cursor: 'pointer' }}>✕</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 12 }}>
+                    {[1, 2, 3, 4, 5].map(i => (
+                      <span key={i} onMouseEnter={() => setHoverRating(i)} onMouseLeave={() => setHoverRating(0)} onClick={() => { setSubmittedRating(i); }} style={{ fontSize: 28, cursor: 'pointer', color: i <= (hoverRating || submittedRating) ? '#F59E0B' : '#E5E7EB', transition: 'color 0.1s', lineHeight: 1 }}>★</span>
+                    ))}
+                    {(hoverRating || submittedRating) > 0 && (
+                      <span style={{ fontSize: 12, color: '#B45309', fontWeight: 600, marginLeft: 6 }}>
+                        {['', '很差', '较差', '一般', '较好', '非常好'][hoverRating || submittedRating]}
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={() => setRatingOpen(false)} style={{ flex: 1, padding: '7px 0', borderRadius: 8, border: '1px solid #e8e8e8', background: '#fff', fontSize: 12, color: '#888', cursor: 'pointer' }}>取消</button>
+                    <button disabled={submittedRating === 0} onClick={() => { if (selectedEmp && submittedRating > 0) { employeeStore.submitRating({ employeeId: selectedEmp.id, sessionId: `session-${Date.now()}`, score: submittedRating, tags: [], comment: '', timestamp: new Date().toISOString() }); } setRatingOpen(false); }} style={{ flex: 2, padding: '7px 0', borderRadius: 8, border: 'none', background: submittedRating > 0 ? 'linear-gradient(135deg, #F59E0B, #FBBF24)' : '#e8e8e8', fontSize: 12, fontWeight: 600, color: submittedRating > 0 ? '#fff' : '#bbb', cursor: submittedRating > 0 ? 'pointer' : 'not-allowed' }}>提交评分</button>
+                  </div>
+                </div>
+              )}
+
+              {/* 输入框 */}
+              <div style={{ padding: '10px 12px', borderTop: '1px solid #f0f0f0', background: '#fff', display: 'flex', gap: 8, flexShrink: 0 }}>
+                <input
+                  value={chatInput}
+                  onChange={e => setChatInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                  placeholder={selectedTask ? `就「${selectedTask.title.slice(0,14)}…」提问或指令` : `给 ${selectedEmp.name} 发送任务或提问...`}
+                  disabled={sending}
+                  style={{ flex: 1, padding: '9px 13px', borderRadius: 9, border: '1px solid #e8e8e8', fontSize: 13, outline: 'none', background: '#fff' }}
+                />
+                <button onClick={handleSend} disabled={!chatInput.trim() || sending} style={{ padding: '9px 18px', borderRadius: 9, border: 'none', fontSize: 13, fontWeight: 600, cursor: chatInput.trim() && !sending ? 'pointer' : 'not-allowed', background: chatInput.trim() && !sending ? 'linear-gradient(135deg, #6366F1, #8B5CF6)' : '#e8e8e8', color: chatInput.trim() && !sending ? '#fff' : '#aaa', transition: 'all 0.15s', flexShrink: 0 }}>发送</button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      ) : (
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid #f0f0f0', borderLeft: 'none', borderRadius: '0 12px 12px 0', background: '#fafbff' }}>
+          <div style={{ textAlign: 'center', color: '#bbb' }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>🤖</div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: '#999', marginBottom: 6 }}>选择一位数字员工</div>
+            <div style={{ fontSize: 12 }}>查看任务执行状态并发起对话</div>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+};
+
+
 interface FrontendProps {
   onBackToAdmin?: () => void;
   selectedSkill?: SkillItem | null;
@@ -366,18 +1544,6 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
 
   // 智能体中心相关状态
   const [showAgentCenter, setShowAgentCenter] = useState(false);
-  // 数字员工相关状态
-  const [showDigitalEmployee, setShowDigitalEmployee] = useState(false);
-  const [deSearch, setDeSearch] = useState('');
-  const [activeDeEmployee, setActiveDeEmployee] = useState<EmployeeRecord | null>(null);
-  const [ratingOpen, setRatingOpen] = useState(false);
-  const [ratingSessionId, setRatingSessionId] = useState('');
-  const [, forceDeUpdate] = useState(0);
-  // 订阅 Store 变化（数字员工评分后刷新）
-  React.useEffect(() => {
-    const unsub = employeeStore.subscribe(() => forceDeUpdate(n => n + 1));
-    return () => { unsub(); };
-  }, []);
   const [agentCenterCategory, setAgentCenterCategory] = useState('全部');
   const [agentCenterSearch, setAgentCenterSearch] = useState('');
   const [showManageDisplay, setShowManageDisplay] = useState(false);
@@ -1959,7 +3125,6 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
     setMentionedAgents([]);
     setInputValue('');
     setShowAgentCenter(false);
-    setShowDigitalEmployee(false);
     setShowOpenClaw(false);
   };
 
@@ -2350,13 +3515,13 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                 marginBottom: '4px',
                 borderRadius: '8px',
                 cursor: 'pointer',
-                background: (!showAgentCenter && !showDigitalEmployee && !showOpenClaw && !currentGroup && !currentConversation) ? '#EEF2FF' : 'transparent',
-                color: (!showAgentCenter && !showDigitalEmployee && !showOpenClaw && !currentGroup && !currentConversation) ? '#6366F1' : '#333',
-                fontWeight: (!showAgentCenter && !showDigitalEmployee && !showOpenClaw && !currentGroup && !currentConversation) ? 600 : 400,
+                background: (!showAgentCenter && !showOpenClaw && !currentGroup && !currentConversation) ? '#EEF2FF' : 'transparent',
+                color: (!showAgentCenter && !showOpenClaw && !currentGroup && !currentConversation) ? '#6366F1' : '#333',
+                fontWeight: (!showAgentCenter && !showOpenClaw && !currentGroup && !currentConversation) ? 600 : 400,
                 transition: 'all 0.2s'
               }}
-              onMouseEnter={(e) => { if (showAgentCenter || showDigitalEmployee || showOpenClaw || currentGroup || currentConversation) e.currentTarget.style.background = '#f5f5f5'; }}
-              onMouseLeave={(e) => { if (showAgentCenter || showDigitalEmployee || showOpenClaw || currentGroup || currentConversation) e.currentTarget.style.background = 'transparent'; }}
+              onMouseEnter={(e) => { if (showAgentCenter || showOpenClaw || currentGroup || currentConversation) e.currentTarget.style.background = '#f5f5f5'; }}
+              onMouseLeave={(e) => { if (showAgentCenter || showOpenClaw || currentGroup || currentConversation) e.currentTarget.style.background = 'transparent'; }}
             >
               <PlusOutlined style={{ fontSize: '16px' }} />
               <span style={{ fontSize: '14px' }}>新建对话</span>
@@ -2364,7 +3529,7 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
 
             {/* 智能体广场 */}
             <div
-              onClick={() => { setShowAgentCenter(true); setShowDigitalEmployee(false); setShowOpenClaw(false); }}
+              onClick={() => { setShowAgentCenter(true); setShowOpenClaw(false); }}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -2385,60 +3550,22 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
               <span style={{ fontSize: '14px' }}>智能体广场</span>
             </div>
 
-            {/* 数字员工 */}
-            <div
-              onClick={() => { setShowDigitalEmployee(true); setShowAgentCenter(false); setShowOpenClaw(false); }}
-              style={{
-                display: 'flex', alignItems: 'center', gap: '10px',
-                padding: '10px 12px', marginBottom: '4px', borderRadius: '8px', cursor: 'pointer',
-                background: showDigitalEmployee ? '#EEF2FF' : 'transparent',
-                color: showDigitalEmployee ? '#6366F1' : '#333',
-                fontWeight: showDigitalEmployee ? 600 : 400, transition: 'all 0.2s',
-              }}
-              onMouseEnter={(e) => { if (!showDigitalEmployee) e.currentTarget.style.background = '#f5f5f5'; }}
-              onMouseLeave={(e) => { if (!showDigitalEmployee) e.currentTarget.style.background = 'transparent'; }}
-            >
-              <span style={{ fontSize: '16px' }}>🤖</span>
-              <span style={{ fontSize: '14px' }}>数字员工</span>
-            </div>
-
             {/* OpenClaw */}
             <div
-              onClick={() => { setShowOpenClaw(true); setShowDigitalEmployee(false); setShowAgentCenter(false); }}
+              onClick={() => { window.location.hash = 'openclaw'; }}
               style={{
                 display: 'flex', alignItems: 'center', gap: '10px',
                 padding: '10px 12px', marginBottom: '4px', borderRadius: '8px', cursor: 'pointer',
-                background: showOpenClaw ? '#FFF1F0' : 'transparent',
-                color: showOpenClaw ? '#ef4444' : '#333',
-                fontWeight: showOpenClaw ? 600 : 400, transition: 'all 0.2s',
+                background: 'transparent',
+                color: '#333',
+                fontWeight: 400, transition: 'all 0.2s',
               }}
-              onMouseEnter={(e) => { if (!showOpenClaw) e.currentTarget.style.background = '#f5f5f5'; }}
-              onMouseLeave={(e) => { if (!showOpenClaw) e.currentTarget.style.background = 'transparent'; }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = '#f5f5f5'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
             >
               <span style={{ fontSize: '16px' }}>🦞</span>
               <span style={{ fontSize: '14px' }}>OpenClaw</span>
             </div>
-
-            {/* 当前数字员工对话评分入口 */}
-            {activeDeEmployee && (
-              <div
-                onClick={() => setRatingOpen(true)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: '8px',
-                  padding: '8px 12px', marginBottom: '4px', borderRadius: '8px', cursor: 'pointer',
-                  background: 'linear-gradient(135deg, #fef9ec, #fefce8)',
-                  border: '1px solid #fde68a', transition: 'all 0.15s',
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = '#fef3c7'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = 'linear-gradient(135deg, #fef9ec, #fefce8)'; }}
-              >
-                <span style={{ fontSize: '14px' }}>⭐</span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: '11px', fontWeight: 600, color: '#92400e', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>为「{activeDeEmployee.name}」评分</div>
-                  <div style={{ fontSize: '10px', color: '#b45309' }}>点击评价本次对话</div>
-                </div>
-              </div>
-            )}
 
             <div style={{ borderTop: '1px solid #f0f0f0', marginBottom: '12px' }} />
           </div>
@@ -2606,96 +3733,12 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          justifyContent: currentGroup || currentConversation ? 'flex-start' : 'center',
+          justifyContent: (currentGroup || currentConversation || showOpenClaw || showAgentCenter) ? 'flex-start' : 'center',
           padding: '24px',
           minHeight: '100vh'
         }}>
-                    {/* 数字员工面板 */}
-          {showDigitalEmployee ? (
-            <div style={{ width: '100%', maxWidth: '900px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-                <div>
-                  <h2 style={{ fontSize: 22, fontWeight: 700, margin: 0, marginBottom: 4 }}>🤖 数字员工</h2>
-                  <div style={{ fontSize: 13, color: '#999' }}>选择一位数字员工开始对话，对话结束后可为其评分</div>
-                </div>
-                <input
-                  placeholder="搜索员工..."
-                  value={deSearch}
-                  onChange={e => setDeSearch(e.target.value)}
-                  style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #e8e8e8', fontSize: 13, outline: 'none', width: 200 }}
-                />
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14 }}>
-                {employeeStore.getEmployees()
-                  .filter(e => e.status === 'published')
-                  .filter(e => !deSearch || e.name.includes(deSearch) || e.dept.includes(deSearch))
-                  .map(emp => {
-                    const isActive = activeDeEmployee?.id === emp.id;
-                    return (
-                      <div
-                        key={emp.id}
-                        style={{
-                          background: '#fff', borderRadius: 12, padding: '16px 18px',
-                          border: isActive ? '1.5px solid #6366F1' : '1px solid #e8e8f0',
-                          cursor: 'pointer', transition: 'all 0.2s',
-                          boxShadow: isActive ? '0 4px 16px rgba(99,102,241,0.15)' : '0 1px 4px rgba(0,0,0,0.04)',
-                        }}
-                        onClick={() => {
-                          setActiveDeEmployee(emp);
-                          setShowDigitalEmployee(false);
-                          // 创建以该员工为对象的新对话
-                          const deAgent: any = {
-                            id: emp.id, name: emp.name,
-                            icon: emp.name.charAt(0), color: '#6366F1',
-                            category: emp.domain, isMultiAgent: false,
-                          };
-                          const convId = `de-conv-${Date.now()}`;
-                          setRatingSessionId(convId);
-                          const newConv: any = {
-                            id: convId, title: `与${emp.name}的对话`,
-                            type: 'agent', agents: [deAgent], messages: [],
-                            createTime: new Date().toISOString(),
-                          };
-                          setConversations((prev: any) => [newConv, ...prev]);
-                          setCurrentConversation(newConv);
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                          <div style={{
-                            width: 40, height: 40, borderRadius: 10, flexShrink: 0,
-                            background: 'linear-gradient(135deg, #6366F1, #8B5CF6)',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            color: '#fff', fontSize: 16, fontWeight: 700,
-                          }}>{emp.name.charAt(0)}</div>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a', marginBottom: 2 }}>{emp.name}</div>
-                            <div style={{ fontSize: 11, color: '#aaa' }}>{emp.dept} · {emp.domain}</div>
-                          </div>
-                          <div style={{ display: 'flex', gap: 1 }}>
-                            {[1,2,3,4,5].map(i => (
-                              <span key={i} style={{ color: i <= Math.round(emp.score) ? '#F59E0B' : '#e8e8e8', fontSize: 12 }}>★</span>
-                            ))}
-                          </div>
-                        </div>
-                        <div style={{ fontSize: 12, color: '#888', lineHeight: 1.5, marginBottom: 10, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const, overflow: 'hidden' }}>
-                          {emp.description}
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <div style={{ display: 'flex', gap: 10 }}>
-                            <span style={{ fontSize: 11, color: '#6366F1', fontWeight: 600 }}>⭐ {emp.score}</span>
-                            <span style={{ fontSize: 11, color: '#999' }}>调用 {emp.callCount >= 1000 ? (emp.callCount/1000).toFixed(1)+'k' : emp.callCount}</span>
-                          </div>
-                          <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: '#eef2ff', color: '#6366F1' }}>开始对话 →</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-              </div>
-            </div>
-          ) : null}
-
           {/* OpenClaw 面板 */}
-          {showOpenClaw && !showDigitalEmployee ? (
+          {showOpenClaw ? (
             <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
               {/* OpenClaw 顶部标签栏 */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexShrink: 0 }}>
@@ -2738,7 +3781,7 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
           ) : null}
 
           {/* 智能体广场界面 */}
-          {!showDigitalEmployee && showAgentCenter ? (
+          {showAgentCenter ? (
             <div style={{ width: '100%', maxWidth: '1400px' }}>
               {/* Header */}
               <div style={{
@@ -2977,7 +4020,7 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
               )}
             </div>
 
-          ) : (currentGroup || currentConversation) ? (
+          ) : (!showOpenClaw && (currentGroup || currentConversation)) ? (
             <div style={{ width: '100%', maxWidth: docPanel ? '100%' : '1000px', height: '100%', display: 'flex', flexDirection: 'row', gap: 0, transition: 'all 0.3s' }}>
               {/* 左侧对话区 */}
               <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', transition: 'all 0.3s' }}>
@@ -4527,7 +5570,7 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
               </div>
             )}
           </div>
-          ) : (
+          ) : (!showOpenClaw) ? (
             /* 欢迎界面 */
             <>
           <div style={{ textAlign: 'center', marginBottom: '40px' }}>
@@ -5044,7 +6087,7 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
             以上内容为AI生成，不代表开发者立场，请勿删除或改变本段文本标识
           </div>
           </>
-          )}
+          ) : null}
         </Content>
       </Layout>
 
@@ -5791,15 +6834,6 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
         </div>
       </Modal>
 
-      {/* 数字员工评分 Modal */}
-      {activeDeEmployee && (
-        <SessionRatingModal
-          open={ratingOpen}
-          employee={activeDeEmployee}
-          sessionId={ratingSessionId}
-          onClose={() => setRatingOpen(false)}
-        />
-      )}
     </>
   );
 };

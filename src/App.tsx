@@ -330,11 +330,11 @@ function App() {
   }
 
   if (currentPage === 'digital-employee' || currentPage === 'digital-employee-workbench' || currentPage === 'digital-employee-library' || currentPage === 'digital-employee-domain') {
-    const tabMap: Record<string, 'workbench' | 'library' | 'domain'> = {
-      'digital-employee': 'workbench',
-      'digital-employee-workbench': 'workbench',
-      'digital-employee-library': 'library',
-      'digital-employee-domain': 'domain',
+    const tabMap: Record<string, 'frontend' | 'workbench' | 'library' | 'domain'> = {
+      'digital-employee':          'frontend',
+      'digital-employee-workbench':'workbench',
+      'digital-employee-library':  'library',
+      'digital-employee-domain':   'domain',
     };
     return (
       <DigitalEmployeeHub
