@@ -1,0 +1,15 @@
+{
+  "files": {
+    "main.css": "/AlinaGong-design/wanjuan-demo/static/css/main.4306cf41.css",
+    "main.js": "/AlinaGong-design/wanjuan-demo/static/js/main.13048dd8.js",
+    "static/js/887.028b4928.chunk.js": "/AlinaGong-design/wanjuan-demo/static/js/887.028b4928.chunk.js",
+    "index.html": "/AlinaGong-design/wanjuan-demo/index.html",
+    "main.4306cf41.css.map": "/AlinaGong-design/wanjuan-demo/static/css/main.4306cf41.css.map",
+    "main.13048dd8.js.map": "/AlinaGong-design/wanjuan-demo/static/js/main.13048dd8.js.map",
+    "887.028b4928.chunk.js.map": "/AlinaGong-design/wanjuan-demo/static/js/887.028b4928.chunk.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.4306cf41.css",
+    "static/js/main.13048dd8.js"
+  ]
+}
