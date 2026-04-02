@@ -1,15 +1,15 @@
 {
   "files": {
-    "main.css": "/AlinaGong-design/wanjuan-demo/static/css/main.4306cf41.css",
-    "main.js": "/AlinaGong-design/wanjuan-demo/static/js/main.13048dd8.js",
-    "static/js/887.028b4928.chunk.js": "/AlinaGong-design/wanjuan-demo/static/js/887.028b4928.chunk.js",
-    "index.html": "/AlinaGong-design/wanjuan-demo/index.html",
-    "main.4306cf41.css.map": "/AlinaGong-design/wanjuan-demo/static/css/main.4306cf41.css.map",
-    "main.13048dd8.js.map": "/AlinaGong-design/wanjuan-demo/static/js/main.13048dd8.js.map",
-    "887.028b4928.chunk.js.map": "/AlinaGong-design/wanjuan-demo/static/js/887.028b4928.chunk.js.map"
+    "main.css": "/wanjuan-demo/static/css/main.4306cf41.css",
+    "main.js": "/wanjuan-demo/static/js/main.79d36885.js",
+    "static/js/887.028b4928.chunk.js": "/wanjuan-demo/static/js/887.028b4928.chunk.js",
+    "index.html": "/wanjuan-demo/index.html",
+    "main.4306cf41.css.map": "/wanjuan-demo/static/css/main.4306cf41.css.map",
+    "main.79d36885.js.map": "/wanjuan-demo/static/js/main.79d36885.js.map",
+    "887.028b4928.chunk.js.map": "/wanjuan-demo/static/js/887.028b4928.chunk.js.map"
   },
   "entrypoints": [
     "static/css/main.4306cf41.css",
-    "static/js/main.13048dd8.js"
+    "static/js/main.79d36885.js"
   ]
 }
