@@ -13,6 +13,7 @@ import API from './pages/API';
 import Components from './pages/Components';
 import Model from './pages/Model';
 import { EvaluationTasks, EvaluationData, EvaluationRules } from './pages/Evaluation';
+import Trace from './pages/Trace';
 import EvaluatorEditor from './pages/EvaluatorEditor';
 import System from './pages/System';
 import Frontend from './pages/Frontend';
@@ -22,6 +23,8 @@ import OpenClawDashboard from './pages/OpenClawDashboard';
 import OpenClawInstances from './pages/OpenClawInstances';
 import DigitalAvatar from './pages/DigitalAvatar';
 import DigitalEmployee from './pages/DigitalEmployee';
+import DigitalEmployeeHub from './pages/DigitalEmployeeHub';
+import UserProfile from './pages/UserProfile';
 import './App.css';
 
 type PageType =
@@ -41,6 +44,7 @@ type PageType =
   | 'evaluation-tasks'
   | 'evaluation-data'
   | 'evaluation-rules'
+  | 'trace'
   | 'system'
   | 'frontend'
   | 'channels'
@@ -49,7 +53,11 @@ type PageType =
   | 'openclaw-editor'
   | 'evaluator-editor'
   | 'digital-avatar'
-  | 'digital-employee';
+  | 'digital-employee'
+  | 'digital-employee-workbench'
+  | 'digital-employee-library'
+  | 'digital-employee-domain'
+  | 'profile';
 
 function App() {
   const [currentPage, setCurrentPage] = useState<PageType>('home');
@@ -113,7 +121,7 @@ function App() {
           setEvaluatorEditorMode(mode);
           setEditingEvaluatorId(evaluatorId);
           setCurrentPage('evaluator-editor');
-        } else if (['home', 'agent', 'knowledge', 'skill', 'workflow', 'mcp', 'api', 'components', 'model', 'evaluation', 'evaluation-tasks', 'evaluation-data', 'evaluation-rules', 'system', 'channels', 'openclaw', 'openclaw-instances', 'digital-avatar', 'digital-employee'].includes(path)) {
+        } else if (['home', 'agent', 'knowledge', 'skill', 'workflow', 'mcp', 'api', 'components', 'model', 'evaluation', 'evaluation-tasks', 'evaluation-data', 'evaluation-rules', 'trace', 'system', 'channels', 'openclaw', 'openclaw-instances', 'digital-avatar', 'digital-employee', 'digital-employee-workbench', 'digital-employee-library', 'digital-employee-domain', 'profile'].includes(path)) {
           setCurrentPage(path as PageType);
         }
       }
@@ -269,14 +277,22 @@ function App() {
             onEditEvaluator={handleEditEvaluator}
           />
         );
+      case 'trace':
+        return <Trace />;
       case 'system':
         return <System />;
       case 'channels':
         return <Channels />;
       case 'digital-avatar':
         return <DigitalAvatar />;
-      case 'digital-employee':
-        return <DigitalEmployee />;
+      case 'digital-employee-workbench':
+        return <DigitalEmployeeHub initialTab="workbench" />;
+      case 'digital-employee-library':
+        return <DigitalEmployeeHub initialTab="library" />;
+      case 'digital-employee-domain':
+        return <DigitalEmployeeHub initialTab="domain" />;
+      case 'profile':
+        return <UserProfile onBack={() => { window.location.hash = 'home'; }} />;
       case 'openclaw-instances':
         return (
           <OpenClawInstances
@@ -295,8 +311,37 @@ function App() {
     return <Frontend onBackToAdmin={handleBackToAdmin} selectedSkill={selectedSkill} />;
   }
 
+  if (currentPage === 'profile') {
+    return (
+      <MainLayout
+        currentPage="home"
+        onMenuClick={handlePageChange}
+        onFrontendClick={handleFrontendClick}
+        onOpenClawClick={() => { window.location.hash = 'openclaw'; }}
+        profileTab={{ open: true, onClose: () => { window.location.hash = 'home'; } }}
+      >
+        <UserProfile onBack={() => { window.location.hash = 'home'; }} />
+      </MainLayout>
+    );
+  }
+
   if (currentPage === 'openclaw') {
     return <OpenClawDashboard />;
+  }
+
+  if (currentPage === 'digital-employee' || currentPage === 'digital-employee-workbench' || currentPage === 'digital-employee-library' || currentPage === 'digital-employee-domain') {
+    const tabMap: Record<string, 'workbench' | 'library' | 'domain'> = {
+      'digital-employee': 'workbench',
+      'digital-employee-workbench': 'workbench',
+      'digital-employee-library': 'library',
+      'digital-employee-domain': 'domain',
+    };
+    return (
+      <DigitalEmployeeHub
+        initialTab={tabMap[currentPage]}
+        onBackToAdmin={() => { window.location.hash = 'home'; }}
+      />
+    );
   }
 
   if (currentPage === 'agent-editor') {

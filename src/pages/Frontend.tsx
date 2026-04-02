@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   Layout,
   Input,
@@ -11,7 +11,11 @@ import {
   Badge,
   Spin,
   message,
-  Select
+  Select,
+  Popover,
+  Switch,
+  Tooltip,
+  Divider,
 } from 'antd';
 import {
   PlusOutlined,
@@ -30,14 +34,39 @@ import {
   UserOutlined,
   PaperClipOutlined,
   EditOutlined,
+  LikeOutlined,
+  DislikeOutlined,
+  SyncOutlined,
   PushpinOutlined,
   DeleteOutlined,
   EllipsisOutlined,
-  QuestionCircleOutlined
+  LinkOutlined,
+  PrinterOutlined,
+  HistoryOutlined,
+  KeyOutlined,
+  FormOutlined,
+  FileAddOutlined,
+  ExclamationCircleOutlined,
+  QuestionCircleOutlined,
+  FileTextOutlined,
+  CloseOutlined,
+  UndoOutlined,
+  RedoOutlined,
+  CopyOutlined,
+  DownloadOutlined,
+  ShareAltOutlined,
+  MessageOutlined,
+  OrderedListOutlined,
+  CheckOutlined,
 } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
 import { SkillItem } from './Skill';
 import MentionEditor, { MentionEditorHandle } from '../components/MentionEditor';
+import html2canvas from 'html2canvas';
+import SessionRatingModal from '../components/SessionRatingModal';
+import { employeeStore, EmployeeRecord } from '../store/employeeStore';
+import OpenClawDashboard from './OpenClawDashboard';
+import OpenClaw from './OpenClaw';
 import './Frontend.css';
 
 const { Sider, Content } = Layout;
@@ -99,6 +128,15 @@ interface CollaborationPlan {
   subTasks: SubTask[];
 }
 
+interface ClarificationItem {
+  id: string;
+  question: string;
+  type: 'select' | 'input';
+  options?: string[];
+  selectedOption?: string;
+  inputValue?: string;
+}
+
 interface Message {
   id: string;
   role: 'user' | 'assistant' | 'clarification';
@@ -113,6 +151,9 @@ interface Message {
   status?: 'thinking' | 'calling' | 'completed' | 'waiting_clarification' | 'planning' | 'dispatching' | 'executing' | 'integrating';
   clarificationQuestion?: string;
   clarificationOptions?: string[];
+  // 结构化需求澄清
+  clarificationItems?: ClarificationItem[];
+  clarificationConfirmed?: boolean;
   // 多智能体协作相关
   collaborationPlan?: CollaborationPlan;
   subTaskResults?: SubTask[];
@@ -145,6 +186,15 @@ interface UploadedFile {
   size: number;
   type: string;
   url?: string;
+}
+
+interface DocPanel {
+  id: string;
+  title: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+  sourceMessageId?: string;
 }
 
 interface FrontendProps {
@@ -199,26 +249,143 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
   const [editingGroupName, setEditingGroupName] = useState('');
 
   // 对话管理相关状态
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [currentConversation, setCurrentConversation] = useState<Conversation | null>(null);
+  const mockAgent: Agent = { id: '5', name: '文案助手', icon: '✍️', color: '#F59E0B', category: '内容创作', isMultiAgent: false };
+  const mockConversationId = 'mock-conv-001';
+  const mockMessages: Message[] = [
+    {
+      id: 'mock-msg-1',
+      role: 'user',
+      content: '帮我写一篇100字的科技类作文',
+      timestamp: new Date(Date.now() - 60000 * 5).toISOString(),
+    },
+    {
+      id: 'mock-msg-2',
+      role: 'assistant',
+      content: `# 科技改变世界\n\n科技是人类文明进步的强大引擎。从蒸汽机的轰鸣到互联网的普及，每一次技术革命都深刻改变了人类的生产与生活方式。\n\n如今，人工智能方兴未艾，大数据赋能千行百业，新能源汽车驶向绿色未来。科技不仅让信息传递更便捷，更让医疗、教育触手可及。\n\n展望未来，科技将持续突破边界，让世界更智慧、更美好。`,
+      agentId: '5',
+      agentName: '文案助手',
+      agentIcon: '✍️',
+      timestamp: new Date(Date.now() - 60000 * 4).toISOString(),
+      status: 'completed',
+    },
+  ];
+  const mockConversation: Conversation = {
+    id: mockConversationId,
+    title: '帮我写一篇100字的科技类作文',
+    type: 'agent',
+    agents: [mockAgent],
+    messages: mockMessages,
+    createTime: new Date(Date.now() - 60000 * 5).toISOString(),
+  };
+  const [conversations, setConversations] = useState<Conversation[]>([mockConversation]);
+  const [currentConversation, setCurrentConversation] = useState<Conversation | null>(mockConversation);
   const [showMentionPanel, setShowMentionPanel] = useState(false);
   // const [mentionType, setMentionType] = useState<'agent' | 'group' | 'mixed'>('agent');  // 已移除群组选择
   // const [selectedGroups, setSelectedGroups] = useState<AgentGroup[]>([]);  // 已移除群组选择
   const [agentReplyQueue, setAgentReplyQueue] = useState<Agent[]>([]);
   const [currentReplyingAgent, setCurrentReplyingAgent] = useState<Agent | null>(null);
   const [expandedCollaborations, setExpandedCollaborations] = useState<Set<string>>(new Set());
+  // 思考折叠状态（msgId → 是否展开）
+  const [thinkingExpanded, setThinkingExpanded] = useState<Record<string, boolean>>({});
 
   // 新建对话相关状态
   const [deepThinking, setDeepThinking] = useState(false);
   const [selectedKnowledgeBase, setSelectedKnowledgeBase] = useState<string[]>([]);
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
 
+  // 文档编辑器状态
+  const [docPanel, setDocPanel] = useState<DocPanel | null>(null);
+  const [docTitle, setDocTitle] = useState('');
+  const [docContent, setDocContent] = useState('');
+  const [docHistory, setDocHistory] = useState<{ title: string; content: string }[]>([]);
+  const [docHistoryIndex, setDocHistoryIndex] = useState(-1);
+  const [docUpdatedAt, setDocUpdatedAt] = useState('');
+  const [showDocComments, setShowDocComments] = useState(false);
+  const [docCopied, setDocCopied] = useState(false);
+  // 已转为文档的消息id集合
+  const [convertedMsgIds, setConvertedMsgIds] = useState<Set<string>>(new Set());
+  const [likedMsgIds, setLikedMsgIds] = useState<Set<string>>(new Set());
+  const [dislikedMsgIds, setDislikedMsgIds] = useState<Set<string>>(new Set());
+  const [copiedMsgIds, setCopiedMsgIds] = useState<Set<string>>(new Set());
+  // 文档编辑器扩展状态
+  const [docFullScreen, setDocFullScreen] = useState(false);
+  const [showDownloadMenu, setShowDownloadMenu] = useState(false);
+  const [selectionToolbar, setSelectionToolbar] = useState<{visible: boolean; x: number; y: number}>({visible: false, x: 0, y: 0});
+  // 评论相关状态
+  interface DocComment { id: string; selectedText: string; commentText: string; author: string; avatar: string; time: string; }
+  const [docComments, setDocComments] = useState<DocComment[]>([]);
+  const [pendingComment, setPendingComment] = useState<{ selectedText: string } | null>(null);
+  const [commentInput, setCommentInput] = useState('');
+  // 文档面板宽度（可拖拽）
+  const [docPanelWidth, setDocPanelWidth] = useState(480);
+  const docResizingRef = useRef(false);
+  const docResizeStartX = useRef(0);
+  const docResizeStartWidth = useRef(480);
+  // 更多菜单相关状态
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  // 需求澄清：存储每条消息的澄清项（msgId → ClarificationItem[]）
+  const [clarificationAnswers, setClarificationAnswers] = useState<Record<string, ClarificationItem[]>>({});
+  // 等待澄清确认的 resolver（msgId → resolve fn）
+  const clarificationResolvers = useRef<Record<string, () => void>>({});
+  const [showConvShareModal, setShowConvShareModal] = useState(false);
+  const [convShareExpiry, setConvShareExpiry] = useState<'7d' | '30d' | '90d' | 'forever'>('90d');
+  const [showShareImagePreview, setShowShareImagePreview] = useState(false);
+  const [shareImageDataUrl, setShareImageDataUrl] = useState<string | null>(null);
+  // 分享：已选消息 id 集合
+  const [shareSelectedMsgIds, setShareSelectedMsgIds] = useState<Set<string>>(new Set());
+  // 分享：图片生成中
+  const [shareImageLoading, setShareImageLoading] = useState(false);
+  // 分享：消息预览区 ref
+  const sharePreviewRef = useRef<HTMLDivElement>(null);
+  // 分享：允许他人访问聊天中的文件
+  const [shareAllowFileAccess, setShareAllowFileAccess] = useState(true);
+  const [showFindReplace, setShowFindReplace] = useState(false);
+  const [findText, setFindText] = useState('');
+  const [replaceText, setReplaceText] = useState('');
+  const [findResult, setFindResult] = useState('');
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [showShortcutsModal, setShowShortcutsModal] = useState(false);
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [feedbackText, setFeedbackText] = useState('');
+  const [feedbackRating, setFeedbackRating] = useState<number | null>(null);
+  const docEditorRef = React.useRef<HTMLDivElement>(null);
+
+  // 对话模式：agent 或 chat
+  const [chatMode, setChatMode] = useState<'agent' | 'chat'>('agent');
+  // 搜索模式（chat模式下）：normal单轮搜索 / advanced高级搜索
+  const [searchMode, setSearchMode] = useState<'normal' | 'advanced' | null>(null);
+  // 联网状态（chat模式下）
+  const [webSearch, setWebSearch] = useState(false);
+  // 联网按钮hover弹窗
+  const [showSearchPopover, setShowSearchPopover] = useState(false);
+  // 当前场景分类（agent/chat分别维护）
+  const [agentSceneCategory, setAgentSceneCategory] = useState('深度写作');
+  const [chatSceneCategory, setChatSceneCategory] = useState('知识问答');
+  // 当前选中的场景
+  const [selectedScene, setSelectedScene] = useState<{ icon: string; name: string; desc: string } | null>(null);
+
   // 智能体中心相关状态
   const [showAgentCenter, setShowAgentCenter] = useState(false);
+  // 数字员工相关状态
+  const [showDigitalEmployee, setShowDigitalEmployee] = useState(false);
+  const [deSearch, setDeSearch] = useState('');
+  const [activeDeEmployee, setActiveDeEmployee] = useState<EmployeeRecord | null>(null);
+  const [ratingOpen, setRatingOpen] = useState(false);
+  const [ratingSessionId, setRatingSessionId] = useState('');
+  const [, forceDeUpdate] = useState(0);
+  // 订阅 Store 变化（数字员工评分后刷新）
+  React.useEffect(() => {
+    const unsub = employeeStore.subscribe(() => forceDeUpdate(n => n + 1));
+    return () => { unsub(); };
+  }, []);
   const [agentCenterCategory, setAgentCenterCategory] = useState('全部');
   const [agentCenterSearch, setAgentCenterSearch] = useState('');
   const [showManageDisplay, setShowManageDisplay] = useState(false);
+  const [showPersonalModal, setShowPersonalModal] = useState(false);
+  const [squarePinnedAgentIds, setSquarePinnedAgentIds] = useState<string[]>(['1', '2', '3', '4']);
   const [pinnedAgentIds, setPinnedAgentIds] = useState<string[]>(['1', '3', '5', '4', '7']); // 默认固定5个智能体
+  const [showOpenClaw, setShowOpenClaw] = useState(false);
+  const [openClawTab, setOpenClawTab] = useState<'chat' | 'dashboard'>('chat');
   const [showOpenClawDeployModal, setShowOpenClawDeployModal] = useState(false);
   const [showOpenClawCopyModal, setShowOpenClawCopyModal] = useState(false);
   const [openClawCopyName, setOpenClawCopyName] = useState('OpenClaw助手(副本)');
@@ -1434,109 +1601,221 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
 
   // 在对话中模拟智能体回复（异步串行版本）
   const simulateAgentReplyInConversation = async (agent: Agent, userMessage: string, conversationId: string) => {
-    // Thinking阶段
-    const thinkingMsg: Message = {
-      id: `msg-${Date.now()}-${agent.id}`,
+    const msgId = `msg-${Date.now()}-${agent.id}`;
+
+    // ── 生成与用户需求相关的澄清问题 ────────────────────────
+    const buildClarificationItems = (text: string): ClarificationItem[] => {
+      const items: ClarificationItem[] = [
+        {
+          id: 'q1',
+          question: '期望的输出形式',
+          type: 'select',
+          options: ['结构化报告', '简洁摘要', '分步骤说明', '对话式解答'],
+          selectedOption: '结构化报告',
+        },
+        {
+          id: 'q2',
+          question: '内容深度要求',
+          type: 'select',
+          options: ['快速概览（300字内）', '标准分析（500~800字）', '深度报告（1000字以上）'],
+          selectedOption: '标准分析（500~800字）',
+        },
+        {
+          id: 'q3',
+          question: '补充背景信息（可选）',
+          type: 'input',
+          inputValue: '',
+        },
+      ];
+      // 根据关键词动态追加一条场景问题
+      if (/数据|分析|报表|统计/.test(text)) {
+        items.splice(1, 0, {
+          id: 'q0',
+          question: '数据来源',
+          type: 'select',
+          options: ['已有数据集', '需要联网搜索', '知识库内部数据'],
+          selectedOption: '需要联网搜索',
+        });
+      } else if (/代码|开发|程序|bug|fix/.test(text)) {
+        items.splice(1, 0, {
+          id: 'q0',
+          question: '编程语言 / 技术栈',
+          type: 'select',
+          options: ['Python', 'JavaScript / TypeScript', 'Java', '其他'],
+          selectedOption: 'Python',
+        });
+      } else if (/文案|写作|营销|内容/.test(text)) {
+        items.splice(1, 0, {
+          id: 'q0',
+          question: '目标受众',
+          type: 'select',
+          options: ['普通用户', '专业人士', 'B端决策者', '青少年'],
+          selectedOption: '普通用户',
+        });
+      }
+      return items;
+    };
+
+    const initItems = buildClarificationItems(userMessage);
+
+    // ── Step 1：短暂思考后展示澄清卡片 ─────────────────────
+    const clarifyMsg: Message = {
+      id: msgId,
       role: 'assistant',
       content: '',
       agentId: agent.id,
       agentName: agent.name,
       agentIcon: agent.icon,
       timestamp: new Date().toISOString(),
-      thinking: '正在深度思考问题...',
+      thinking: '正在分析需求...',
       status: 'thinking',
     };
 
     setConversations(prev => prev.map(conv =>
       conv.id === conversationId
-        ? { ...conv, messages: [...conv.messages, thinkingMsg] }
+        ? { ...conv, messages: [...conv.messages, clarifyMsg] }
         : conv
     ));
-    setCurrentConversation(prev => prev ? { ...prev, messages: [...prev.messages, thinkingMsg] } : null);
+    setCurrentConversation(prev => prev ? { ...prev, messages: [...prev.messages, clarifyMsg] } : null);
 
-    // 等待1-2秒（模拟thinking时间）
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    await new Promise(resolve => setTimeout(resolve, 900));
 
-    // 偶尔需要澄清（约20%概率）
-    const needsClarification = Math.random() < 0.2;
+    // 切换到 waiting_clarification，挂载澄清项
+    const toClarifying = (msg: Message) =>
+      msg.id === msgId
+        ? { ...msg, status: 'waiting_clarification' as const, thinking: undefined, clarificationItems: initItems }
+        : msg;
 
-    if (needsClarification) {
-      // 显示澄清请求
-      const updateWithClarification = (msg: Message) =>
-        msg.id === thinkingMsg.id
-          ? {
-              ...msg,
-              status: 'waiting_clarification' as const,
-              clarificationQuestion: '为了更好地回答您的问题，我需要确认一下：',
-              clarificationOptions: [
-                '您希望了解更详细的技术细节',
-                '您希望了解实际应用场景',
-                '您希望获得最佳实践建议'
-              ]
-            }
-          : msg;
+    setConversations(prev => prev.map(conv =>
+      conv.id === conversationId ? { ...conv, messages: conv.messages.map(toClarifying) } : conv
+    ));
+    setCurrentConversation(prev => prev ? { ...prev, messages: prev.messages.map(toClarifying) } : null);
 
-      setConversations(prev => prev.map(conv =>
-        conv.id === conversationId
-          ? { ...conv, messages: conv.messages.map(updateWithClarification) }
-          : conv
-      ));
-      setCurrentConversation(prev => prev ? {
-        ...prev,
-        messages: prev.messages.map(updateWithClarification)
-      } : null);
+    // 初始化 clarificationAnswers 状态
+    setClarificationAnswers(prev => ({ ...prev, [msgId]: initItems }));
 
-      // 这里实际应该等待用户输入，现在模拟自动选择
-      await new Promise(resolve => setTimeout(resolve, 2000));
-    }
+    // ── Step 2：等待用户点击"确认执行" ──────────────────────
+    await new Promise<void>(resolve => {
+      clarificationResolvers.current[msgId] = resolve;
+    });
 
-    // Tool调用阶段
+    // 标记已确认
+    const toConfirmed = (msg: Message) =>
+      msg.id === msgId
+        ? { ...msg, clarificationConfirmed: true, thinking: '需求已确认，正在规划任务...' }
+        : msg;
+
+    setConversations(prev => prev.map(conv =>
+      conv.id === conversationId ? { ...conv, messages: conv.messages.map(toConfirmed) } : conv
+    ));
+    setCurrentConversation(prev => prev ? { ...prev, messages: prev.messages.map(toConfirmed) } : null);
+
+    await new Promise(resolve => setTimeout(resolve, 800));
+
+    // ── Step 3：工具调用阶段 ──────────────────────────────
+    const tool1 = getRandomTool(agent.name);
+    const tool2 = getRandomTool(agent.name);
     const updateWithToolCalls = (msg: Message) =>
-      msg.id === thinkingMsg.id
+      msg.id === msgId
         ? {
             ...msg,
             status: 'calling' as const,
-            thinking: '正在调用工具...',
+            thinking: '正在调用工具执行任务...',
             toolCalls: [
-              { id: 'tool-1', name: 'web_search', status: 'running' as const },
-              { id: 'tool-2', name: 'read_file', status: 'running' as const }
-            ]
+              { id: 'tool-1', name: tool1, status: 'running' as const },
+              { id: 'tool-2', name: tool2, status: 'running' as const },
+            ],
           }
         : msg;
 
     setConversations(prev => prev.map(conv =>
-      conv.id === conversationId
-        ? { ...conv, messages: conv.messages.map(updateWithToolCalls) }
-        : conv
+      conv.id === conversationId ? { ...conv, messages: conv.messages.map(updateWithToolCalls) } : conv
     ));
-    setCurrentConversation(prev => prev ? {
-      ...prev,
-      messages: prev.messages.map(updateWithToolCalls)
-    } : null);
+    setCurrentConversation(prev => prev ? { ...prev, messages: prev.messages.map(updateWithToolCalls) } : null);
 
-    // 等待2-3秒（模拟工具调用时间）
     await new Promise(resolve => setTimeout(resolve, 2500));
 
-    // 完成阶段
+    // ── Step 4：输出结果 ────────────────────────────────────
+    const isWritingScene = agent.category === '内容创作' || agent.id === 'scene-assistant' ||
+      ['研究报告', '长文写作', '营销文案', '内容优化', '作文', '文章', '写作', '科技', '科学'].some(k => agent.name.includes(k) || userMessage.includes(k));
+
+    const wordCountMatch = userMessage.match(/(\d+)\s*字/);
+    const requestedWords = wordCountMatch ? parseInt(wordCountMatch[1]) : 0;
+    const isSciTech = ['科技', '科学', '技术', '人工智能', 'AI', '数字', '智能'].some(k => userMessage.includes(k));
+
+    const shortEssayContent = requestedWords > 0 && requestedWords <= 200 ?
+      (isSciTech ?
+        `# 科技改变世界\n\n科技是人类文明进步的强大引擎。从蒸汽机的轰鸣到互联网的普及，每一次技术革命都深刻改变了人类的生产与生活方式。\n\n如今，人工智能方兴未艾，大数据赋能千行百业，新能源汽车驶向绿色未来。科技不仅让信息传递更便捷，更让医疗、教育触手可及。\n\n展望未来，科技将持续突破边界，让世界更智慧、更美好。`
+        : `# ${userMessage.slice(0, 20)}\n\n${userMessage}是一个值得深入探讨的主题。它与我们的生活息息相关，影响着每一个人的成长与发展。\n\n通过不断学习与实践，我们能更深刻地理解其中的意义与价值。每一步探索都是向未来迈进的坚实脚印。\n\n让我们以开放的心态，勇于尝试，在实践中收获成长，共同创造更美好的明天。`)
+      : null;
+
+    const articleContent = isWritingScene
+      ? (shortEssayContent ?? `# ${userMessage.slice(0, 30)}${userMessage.length > 30 ? '……' : ''}
+
+## 引言
+
+在当今快速变化的时代，这一议题正变得愈发重要。无论是从学术研究的角度，还是从实践应用的层面来看，深入理解这一主题都具有重要的现实意义。本文将从多个维度加以分析，探讨其背后的核心逻辑与价值所在。
+
+## 背景与现状
+
+纵观近年来的发展脉络，我们可以清晰地看到这一领域正在经历深刻变革。相关数据显示，越来越多的人开始关注并参与到这一议题的讨论中来。与此同时，技术的进步与社会的演变也为我们提供了全新的视角和工具，使得对这一主题的探索更加深入和全面。
+
+## 核心观点
+
+**第一，** 理念先行是根本。任何实质性的进展都需要建立在清晰的理念基础之上，只有明确目标与方向，才能在实践中少走弯路，事半功倍。
+
+**第二，** 方法论的创新至关重要。传统的思维框架在面对新问题时往往捉襟见肘，我们需要勇于突破固有模式，探索更具���应性的解决方案。
+
+**第三，** 实践检验真理。再好的理论也需要通过实践来验证和完善，在不断试错与迭代的过程中，才能找到真正有效的路径。
+
+## 展望与建议
+
+面向未来，我们应当以更加开放和包容的心态迎接变化，同时保持对核心价值的坚守。建议从以下几个方面着手：一是加强基础研究，夯实理论根基；二是注重跨领域合作，汇聚多方智慧；三是关注实际效果，及时调整策略；四是培养长期思维，避免短视行为。
+
+## 结语
+
+综上所述，这一课题既充满挑战，也蕴藏着巨大的机遇。只要我们以科学的态度、务实的精神去面对，相信必将取得令人满意的成果。让我们共同期待并推动这一领域迈向更加美好的未来。`)
+      : `我是${agent.name}。针对您的需求「${userMessage}」，经过需求确认与工具调用，以下是执行结果：\n\n**分析摘要**\n已从多个维度对您的需求进行拆解，识别出核心目标与约束条件，制定了最优执行路径。\n\n**执行过程**\n1. 调用 \`${tool1}\` 完成数据检索与信息聚合\n2. 调用 \`${tool2}\` 对结果进行深度处理与验证\n3. 整合多源信息，生成结构化输出\n\n**结果输出**\n基于以上分析，建议您从以下角度切入：首先明确核心目标，其次制定分阶段执行计划，最后设置关键指标对结果进行持续监控与优化。如需进一步细化某个环节，欢迎继续提问。`;
+
     const updateWithCompletion = (msg: Message) =>
-      msg.id === thinkingMsg.id
+      msg.id === msgId
         ? {
             ...msg,
             status: 'completed' as const,
-            content: `我是${agent.name}。针对您的问题"${userMessage}"，经过深度思考和工具调用，我的回答是：\n\n这是一个详细的回答内容，包含了对问题的分析和建议。我已经考虑了多个方面，包括技术实现、最佳实践以及潜在的注意事项。`,
-            toolCalls: msg.toolCalls?.map(t => ({ ...t, status: 'completed' as const }))
+            thinking: undefined,
+            content: articleContent,
+            toolCalls: msg.toolCalls?.map(t => ({ ...t, status: 'completed' as const })),
           }
         : msg;
 
     setConversations(prev => prev.map(conv =>
-      conv.id === conversationId
-        ? { ...conv, messages: conv.messages.map(updateWithCompletion) }
-        : conv
+      conv.id === conversationId ? { ...conv, messages: conv.messages.map(updateWithCompletion) } : conv
     ));
-    setCurrentConversation(prev => prev ? {
-      ...prev,
-      messages: prev.messages.map(updateWithCompletion)
-    } : null);
+    setCurrentConversation(prev => prev ? { ...prev, messages: prev.messages.map(updateWithCompletion) } : null);
+
+    // 清理 resolver
+    delete clarificationResolvers.current[msgId];
+    setClarificationAnswers(prev => { const n = { ...prev }; delete n[msgId]; return n; });
+  };
+
+  // 用户确认需求澄清 → 触发继续执行
+  const handleClarificationConfirm = (msgId: string) => {
+    const resolver = clarificationResolvers.current[msgId];
+    if (resolver) {
+      // 将用户在 UI 修改的选项同步回消息状态
+      const items = clarificationAnswers[msgId];
+      if (items) {
+        const syncItems = (msg: Message) =>
+          msg.id === msgId ? { ...msg, clarificationItems: items } : msg;
+        setConversations(prev => prev.map(conv => ({
+          ...conv, messages: conv.messages.map(syncItems),
+        })));
+        setCurrentConversation(prev => prev ? {
+          ...prev, messages: prev.messages.map(syncItems),
+        } : null);
+      }
+      resolver();
+    }
   };
 
   // 创建新对话（从欢迎界面）
@@ -1546,13 +1825,17 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
 
     if (!inputValue.trim()) return;
 
-    // 检查是否选择了智能体
-    if (mentionedAgents.length === 0) {
-      message.warning('请先@智能体');
-      return;
-    }
+    // 如果没有@智能体但有场景，根据场景自动选择合适的智能体；若无场景，使用第一个可用智能体作为默认
+    const defaultSceneAgent: Agent = selectedScene ? {
+      id: 'scene-assistant',
+      name: selectedScene.name + '助手',
+      icon: selectedScene.icon,
+      color: '#6366F1',
+      category: '内容创作',
+      isMultiAgent: false,
+    } : (allAgents.find(a => !a.isMultiAgent) || allAgents[0]);
 
-    const agent = mentionedAgents[0]; // 单选模式，只有一个智能体
+    const agent = mentionedAgents.length > 0 ? mentionedAgents[0] : defaultSceneAgent;
     console.log('选中的智能体:', agent);
     console.log('isMultiAgent:', agent.isMultiAgent);
 
@@ -1601,7 +1884,7 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
       console.log('❌ 普通智能体模式 - 创建单聊对话');
 
       // 普通单智能体，创建对话
-      const conversationAgents = mentionedAgents;
+      const conversationAgents = mentionedAgents.length > 0 ? mentionedAgents : [agent];
 
       const newConversation: Conversation = {
         id: `conv-${Date.now()}`,
@@ -1651,12 +1934,33 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
 
   // 新建对话按钮处理
   const handleNewConversation = () => {
+    // 将当前对话保存到历史记录（如有内容）
+    if (currentConversation && currentConversation.messages.length > 0) {
+      setConversations(prev => {
+        const exists = prev.find(c => c.id === currentConversation.id);
+        if (exists) return prev;
+        return [currentConversation, ...prev];
+      });
+    } else if (currentGroup && messages.length > 0) {
+      // 群组对话也保存
+      const groupConv: Conversation = {
+        id: `conv-group-${Date.now()}`,
+        title: currentGroup.name,
+        type: 'group',
+        group: currentGroup,
+        messages: [...messages],
+        createTime: new Date().toISOString(),
+      };
+      setConversations(prev => [groupConv, ...prev]);
+    }
     setCurrentConversation(null);
     setCurrentGroup(null);
     setMessages([]);
     setMentionedAgents([]);
-    // setSelectedGroups([]);  // 已移除群组选择功能
     setInputValue('');
+    setShowAgentCenter(false);
+    setShowDigitalEmployee(false);
+    setShowOpenClaw(false);
   };
 
   // 文件上传处理
@@ -1672,6 +1976,228 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
       setUploadedFiles(prev => [...prev, ...newFiles]);
     }
   };
+
+  // 文档编辑器操作
+  const handleConvertToDoc = useCallback((msg: Message) => {
+    const now = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+    const title = msg.content.split('\n')[0].replace(/^#+\s*/, '').slice(0, 40) || '未命名文档';
+    const content = msg.content;
+    const panel: DocPanel = {
+      id: `doc-${Date.now()}`,
+      title,
+      content,
+      createdAt: now,
+      updatedAt: now,
+      sourceMessageId: msg.id,
+    };
+    setDocPanel(panel);
+    setDocTitle(title);
+    setDocContent(content);
+    setDocUpdatedAt(now);
+    setDocHistory([{ title, content }]);
+    setDocHistoryIndex(0);
+    setConvertedMsgIds(prev => { const s = new Set(prev); s.add(msg.id); return s; });
+  }, []);
+
+  const handleDocChange = useCallback((newTitle: string, newContent: string) => {
+    const now = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+    setDocTitle(newTitle);
+    setDocContent(newContent);
+    setDocUpdatedAt(now);
+    setDocHistory(prev => {
+      const truncated = prev.slice(0, docHistoryIndex + 1);
+      return [...truncated, { title: newTitle, content: newContent }];
+    });
+    setDocHistoryIndex(prev => prev + 1);
+  }, [docHistoryIndex]);
+
+  const handleDocUndo = useCallback(() => {
+    if (docHistoryIndex > 0) {
+      const idx = docHistoryIndex - 1;
+      setDocHistoryIndex(idx);
+      setDocTitle(docHistory[idx].title);
+      setDocContent(docHistory[idx].content);
+    }
+  }, [docHistoryIndex, docHistory]);
+
+  const handleDocRedo = useCallback(() => {
+    if (docHistoryIndex < docHistory.length - 1) {
+      const idx = docHistoryIndex + 1;
+      setDocHistoryIndex(idx);
+      setDocTitle(docHistory[idx].title);
+      setDocContent(docHistory[idx].content);
+    }
+  }, [docHistoryIndex, docHistory]);
+
+  const handleDocCopy = useCallback(() => {
+    navigator.clipboard.writeText(`${docTitle}\n\n${docContent}`).then(() => {
+      setDocCopied(true);
+      setTimeout(() => setDocCopied(false), 2000);
+    });
+  }, [docTitle, docContent]);
+
+  const handleDocDownload = useCallback(() => {
+    const blob = new Blob([`${docTitle}\n\n${docContent}`], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${docTitle || '文档'}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+    message.success('已下载');
+  }, [docTitle, docContent]);
+
+  const handleDocShare = useCallback(() => {
+    const link = `${window.location.origin}/share/doc-${docPanel?.id ?? 'xxxx'}`;
+    navigator.clipboard.writeText(link).then(() => {
+      message.success('文档链接已复制');
+    });
+  }, [docPanel?.id]);
+
+  const handleCloseDoc = useCallback(() => {
+    setDocPanel(null);
+    setDocTitle('');
+    setDocContent('');
+    setDocHistory([]);
+    setDocHistoryIndex(-1);
+    setShowDocComments(false);
+    setDocComments([]);
+    setPendingComment(null);
+    setCommentInput('');
+    setDocPanelWidth(480);
+  }, []);
+
+  // 文档下载（按格式）
+  const handleDocDownloadFormat = React.useCallback((format: 'word' | 'pdf' | 'markdown') => {
+    setShowDownloadMenu(false);
+    if (format === 'markdown') {
+      const blob = new Blob([`# ${docTitle}\n\n${docContent}`], { type: 'text/markdown;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `${docTitle || '文档'}.md`; a.click();
+      URL.revokeObjectURL(url);
+      message.success('已下载 Markdown');
+    } else if (format === 'word') {
+      const html = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word'><head><meta charset='utf-8'></head><body><h1>${docTitle}</h1><p>${docContent.replace(/\n/g, '</p><p>')}</p></body></html>`;
+      const blob = new Blob([html], { type: 'application/msword' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `${docTitle || '文档'}.doc`; a.click();
+      URL.revokeObjectURL(url);
+      message.success('已下载 Word');
+    } else if (format === 'pdf') {
+      message.info('PDF导出功能开发中');
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [docTitle, docContent]);
+
+  // 查找下一个
+  const handleFindNext = React.useCallback(() => {
+    if (!findText) return;
+    const found = (window as any).find(findText, false, false, true, false, false, false);
+    setFindResult(found ? '' : '未找到匹配内容');
+  }, [findText]);
+
+  // 查找上一个
+  const handleFindPrev = React.useCallback(() => {
+    if (!findText) return;
+    const found = (window as any).find(findText, false, true, true, false, false, false);
+    setFindResult(found ? '' : '未找到匹配内容');
+  }, [findText]);
+
+  // 全部替换
+  const handleReplaceAll = React.useCallback(() => {
+    if (!findText || !docEditorRef.current) return;
+    const escaped = findText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(escaped, 'gi');
+    const matches = (docEditorRef.current.innerText.match(regex) || []).length;
+    if (matches === 0) { setFindResult('未找到匹配内容'); return; }
+    const newHtml = docEditorRef.current.innerHTML.replace(regex, replaceText);
+    docEditorRef.current.innerHTML = newHtml;
+    const text = docEditorRef.current.innerText;
+    setDocContent(text);
+    const now = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+    setDocUpdatedAt(now);
+    setFindResult(`已替换 ${matches} 处`);
+    message.success(`已替换 ${matches} 处匹配内容`);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [findText, replaceText]);
+
+  // 复制文档链接
+  const handleCopyDocLink = React.useCallback(() => {
+    const link = `${window.location.origin}${window.location.pathname}#doc-${docPanel?.id}`;
+    navigator.clipboard.writeText(link).then(() => message.success('链接已复制到剪贴板'));
+    setShowMoreMenu(false);
+  }, [docPanel?.id]);
+
+  // 创建副本
+  const handleCreateDocCopy = React.useCallback(() => {
+    const copyTitle = `${docTitle}（副本）`;
+    const now = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+    message.success(`已创建副本"${copyTitle}"`);
+    setShowMoreMenu(false);
+  }, [docTitle]);
+
+  // 打印
+  const handlePrintDoc = React.useCallback(() => {
+    setShowMoreMenu(false);
+    const win = window.open('', '_blank');
+    if (!win) return;
+    win.document.write(`<!DOCTYPE html><html><head><title>${docTitle}</title><style>body{font-family:sans-serif;padding:40px;max-width:800px;margin:0 auto}h1{font-size:28px;margin-bottom:24px}p{font-size:15px;line-height:1.8;margin-bottom:12px}@media print{body{padding:0}}</style></head><body><h1>${docTitle}</h1>${docEditorRef.current?.innerHTML || ''}</body></html>`);
+    win.document.close();
+    win.focus();
+    setTimeout(() => win.print(), 300);
+  }, [docTitle]);
+
+  // 删除文档
+  const handleDeleteDoc = React.useCallback(() => {
+    setShowMoreMenu(false);
+    Modal.confirm({
+      title: '确认删除文档',
+      icon: <ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />,
+      content: `确定要删除"${docTitle || '未命名文档'}"吗？此操作不可恢复。`,
+      okText: '删除',
+      cancelText: '取消',
+      okButtonProps: { danger: true },
+      onOk: () => {
+        handleCloseDoc();
+        setDocFullScreen(false);
+        message.success('文档已删除');
+      },
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [docTitle]);
+
+  // 选中文字时浮动工具栏
+  // 时间问候语
+  const getGreeting = (): string => {
+    const h = new Date().getHours();
+    if (h >= 5 && h < 12) return '早上好';
+    if (h >= 12 && h < 14) return '中午好';
+    if (h >= 14 && h < 18) return '下午好';
+    if (h >= 18 && h < 23) return '晚上好';
+    return '夜深了';
+  };
+  const [greeting] = useState(getGreeting);
+
+  const handleEditorMouseUp = React.useCallback(() => {
+    setTimeout(() => {
+      const sel = window.getSelection();
+      if (sel && sel.toString().length > 0 && sel.rangeCount > 0) {
+        const range = sel.getRangeAt(0);
+        const rect = range.getBoundingClientRect();
+        setSelectionToolbar({ visible: true, x: rect.left + rect.width / 2, y: rect.top - 52 });
+      } else {
+        setSelectionToolbar({ visible: false, x: 0, y: 0 });
+      }
+    }, 10);
+  }, []);
+
+  // 应用文字格式
+  const applyFormat = React.useCallback((command: string, value?: string) => {
+    document.execCommand(command, false, value);
+    docEditorRef.current?.focus();
+  }, []);
 
   // 选择群组 - 已废弃，群组选择功能已移除
   // const handleSelectGroup = (group: AgentGroup) => {
@@ -1725,6 +2251,33 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
     { id: '9', title: '你好', subtitle: '', time: '', isMultiAgent: false },
   ];
 
+  // 初始化 contentEditable 内容
+  React.useEffect(() => {
+    if (docEditorRef.current && docPanel) {
+      const html = docContent
+        .split('\n')
+        .map(line => line.trim() ? `<p style="margin:0 0 8px 0">${line.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/^## (.+)$/, '<h2 style="font-size:18px;font-weight:700;margin:16px 0 8px">$1</h2>').replace(/^# (.+)$/, '<h1 style="font-size:24px;font-weight:700;margin:20px 0 12px">$1</h1>')}</p>` : '<p style="margin:0 0 8px 0"><br></p>')
+        .join('');
+      docEditorRef.current.innerHTML = html;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [docPanel?.id]);
+
+  // undo/redo 时同步 contentEditable
+  React.useEffect(() => {
+    if (docEditorRef.current) {
+      const current = docEditorRef.current.innerText;
+      if (current !== docContent) {
+        const html = docContent
+          .split('\n')
+          .map(line => line.trim() ? `<p style="margin:0 0 8px 0">${line.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/^## (.+)$/, '<h2 style="font-size:18px;font-weight:700;margin:16px 0 8px">$1</h2>').replace(/^# (.+)$/, '<h1 style="font-size:24px;font-weight:700;margin:20px 0 12px">$1</h1>')}</p>` : '<p style="margin:0 0 8px 0"><br></p>')
+          .join('');
+        docEditorRef.current.innerHTML = html;
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [docHistoryIndex]);
+
   const modelMenuItems: MenuProps['items'] = [
     {
       key: '1',
@@ -1737,10 +2290,11 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
   ];
 
   return (
-    <Layout style={{ minHeight: '100vh', background: '#fff' }}>
+    <>
+    <Layout style={{ height: '100vh', overflow: 'hidden' }}>
       <Sider
         collapsible
-        collapsed={collapsed}
+        collapsed={collapsed || !!docPanel}
         onCollapse={setCollapsed}
         trigger={null}
         width={260}
@@ -1753,325 +2307,284 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
           flexDirection: 'column'
         }}
       >
-        <div style={{ padding: '16px', flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <div style={{
-                width: '32px',
-                height: '32px',
-                background: 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)',
-                borderRadius: '8px',
+        {/* 顶部 Logo + 折叠按钮 */}
+        <div style={{ padding: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{
+              width: '32px',
+              height: '32px',
+              background: 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)',
+              borderRadius: '8px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#fff',
+              fontWeight: 'bold',
+              fontSize: '16px'
+            }}>
+              Q
+            </div>
+            {!(collapsed || !!docPanel) && <span style={{ fontSize: '18px', fontWeight: 'bold' }}>万卷</span>}
+          </div>
+          {!docPanel && (
+          <Button
+            type="text"
+            icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+            onClick={() => setCollapsed(!collapsed)}
+            style={{ padding: '4px' }}
+          />
+          )}
+        </div>
+
+        {/* 主导航区 */}
+        {!(collapsed || !!docPanel) && (
+          <div style={{ padding: '0 12px', flexShrink: 0 }}>
+            {/* 新建对话 */}
+            <div
+              onClick={handleNewConversation}
+              style={{
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center',
-                color: '#fff',
-                fontWeight: 'bold',
-                fontSize: '16px'
-              }}>
-                Q
-              </div>
-              {!collapsed && <span style={{ fontSize: '18px', fontWeight: 'bold' }}>万卷</span>}
+                gap: '10px',
+                padding: '10px 12px',
+                marginBottom: '4px',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                background: (!showAgentCenter && !showDigitalEmployee && !showOpenClaw && !currentGroup && !currentConversation) ? '#EEF2FF' : 'transparent',
+                color: (!showAgentCenter && !showDigitalEmployee && !showOpenClaw && !currentGroup && !currentConversation) ? '#6366F1' : '#333',
+                fontWeight: (!showAgentCenter && !showDigitalEmployee && !showOpenClaw && !currentGroup && !currentConversation) ? 600 : 400,
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={(e) => { if (showAgentCenter || showDigitalEmployee || showOpenClaw || currentGroup || currentConversation) e.currentTarget.style.background = '#f5f5f5'; }}
+              onMouseLeave={(e) => { if (showAgentCenter || showDigitalEmployee || showOpenClaw || currentGroup || currentConversation) e.currentTarget.style.background = 'transparent'; }}
+            >
+              <PlusOutlined style={{ fontSize: '16px' }} />
+              <span style={{ fontSize: '14px' }}>新建对话</span>
             </div>
-            <Button
-              type="text"
-              icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-              onClick={() => setCollapsed(!collapsed)}
-              style={{ padding: '4px' }}
-            />
-          </div>
 
-          {!collapsed && (
-            <>
-              <Button
-                type="default"
-                icon={<PlusOutlined />}
-                block
-                style={{
-                  marginBottom: '12px',
-                  height: '40px',
-                  borderRadius: '8px',
-                  borderColor: '#d9d9d9'
-                }}
-                onClick={handleNewConversation}
-              >
-                新建对话
-              </Button>
-{/* 
-              <Button
-                type="default"
-                icon={<TeamOutlined />}
-                block
-                style={{
-                  marginBottom: '24px',
-                  height: '40px',
-                  borderRadius: '8px',
-                  borderColor: '#d9d9d9'
-                }}
-                onClick={() => setShowGroupModal(true)}
-              >
-                新建群组
-              </Button> */}
+            {/* 智能体广场 */}
+            <div
+              onClick={() => { setShowAgentCenter(true); setShowDigitalEmployee(false); setShowOpenClaw(false); }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                padding: '10px 12px',
+                marginBottom: '4px',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                background: showAgentCenter ? '#EEF2FF' : 'transparent',
+                color: showAgentCenter ? '#6366F1' : '#333',
+                fontWeight: showAgentCenter ? 600 : 400,
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={(e) => { if (!showAgentCenter) e.currentTarget.style.background = '#f5f5f5'; }}
+              onMouseLeave={(e) => { if (!showAgentCenter) e.currentTarget.style.background = 'transparent'; }}
+            >
+              <span style={{ fontSize: '16px' }}>🏪</span>
+              <span style={{ fontSize: '14px' }}>智能体广场</span>
+            </div>
 
-              <div style={{ marginBottom: '24px' }}>
-                <div style={{ fontSize: '12px', color: '#999', marginBottom: '12px' }}>智能体中心</div>
-                {allAgents.filter(agent => pinnedAgentIds.includes(agent.id)).map(agent => (
-                  <div
-                    key={agent.id}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      padding: '8px',
-                      marginBottom: '8px',
-                      borderRadius: '8px',
-                      cursor: 'pointer',
-                      transition: 'background 0.3s'
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = '#f5f5f5'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                  >
-                    <span style={{ fontSize: '20px' }}>{agent.icon}</span>
-                    <span style={{ fontSize: '14px' }}>{agent.name}</span>
-                    {agent.isMultiAgent && <Tag color={'#6366F1'}> 多智能体 </Tag>}
-                  </div>
-                ))}
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '8px',
-                    cursor: 'pointer',
-                    color: '#666'
-                  }}
-                  onClick={() => setShowAgentCenter(true)}
-                  onMouseEnter={(e) => e.currentTarget.style.background = '#f5f5f5'}
-                  onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span>📦</span>
-                    <span style={{ fontSize: '14px' }}>查看更多</span>
-                  </div>
-                  <span>›</span>
+            {/* 数字员工 */}
+            <div
+              onClick={() => { setShowDigitalEmployee(true); setShowAgentCenter(false); setShowOpenClaw(false); }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '10px',
+                padding: '10px 12px', marginBottom: '4px', borderRadius: '8px', cursor: 'pointer',
+                background: showDigitalEmployee ? '#EEF2FF' : 'transparent',
+                color: showDigitalEmployee ? '#6366F1' : '#333',
+                fontWeight: showDigitalEmployee ? 600 : 400, transition: 'all 0.2s',
+              }}
+              onMouseEnter={(e) => { if (!showDigitalEmployee) e.currentTarget.style.background = '#f5f5f5'; }}
+              onMouseLeave={(e) => { if (!showDigitalEmployee) e.currentTarget.style.background = 'transparent'; }}
+            >
+              <span style={{ fontSize: '16px' }}>🤖</span>
+              <span style={{ fontSize: '14px' }}>数字员工</span>
+            </div>
+
+            {/* OpenClaw */}
+            <div
+              onClick={() => { setShowOpenClaw(true); setShowDigitalEmployee(false); setShowAgentCenter(false); }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '10px',
+                padding: '10px 12px', marginBottom: '4px', borderRadius: '8px', cursor: 'pointer',
+                background: showOpenClaw ? '#FFF1F0' : 'transparent',
+                color: showOpenClaw ? '#ef4444' : '#333',
+                fontWeight: showOpenClaw ? 600 : 400, transition: 'all 0.2s',
+              }}
+              onMouseEnter={(e) => { if (!showOpenClaw) e.currentTarget.style.background = '#f5f5f5'; }}
+              onMouseLeave={(e) => { if (!showOpenClaw) e.currentTarget.style.background = 'transparent'; }}
+            >
+              <span style={{ fontSize: '16px' }}>🦞</span>
+              <span style={{ fontSize: '14px' }}>OpenClaw</span>
+            </div>
+
+            {/* 当前数字员工对话评分入口 */}
+            {activeDeEmployee && (
+              <div
+                onClick={() => setRatingOpen(true)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '8px',
+                  padding: '8px 12px', marginBottom: '4px', borderRadius: '8px', cursor: 'pointer',
+                  background: 'linear-gradient(135deg, #fef9ec, #fefce8)',
+                  border: '1px solid #fde68a', transition: 'all 0.15s',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = '#fef3c7'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'linear-gradient(135deg, #fef9ec, #fefce8)'; }}
+              >
+                <span style={{ fontSize: '14px' }}>⭐</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '11px', fontWeight: 600, color: '#92400e', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>为「{activeDeEmployee.name}」评分</div>
+                  <div style={{ fontSize: '10px', color: '#b45309' }}>点击评价本次对话</div>
                 </div>
               </div>
+            )}
 
-              {/* 群组列表 */}
-              {/* {agentGroups.length > 0 && (
-                <div style={{ marginBottom: '24px' }}>
-                  <div style={{
-                    fontSize: '12px',
-                    color: '#999',
-                    marginBottom: '12px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between'
-                  }}>
-                    <span>我的群组</span>
-                    <Badge count={agentGroups.length} style={{ backgroundColor: '#6366F1' }} />
-                  </div>
-                  {agentGroups.slice(0, showAllGroups ? undefined : 5).map(group => (
-                    <div
-                      key={group.id}
-                      style={{
-                        padding: '10px',
-                        marginBottom: '8px',
-                        borderRadius: '8px',
-                        cursor: 'pointer',
-                        border: currentGroup?.id === group.id ? '1px solid #6366F1' : '1px solid transparent',
-                        background: currentGroup?.id === group.id ? '#F0F0FF' : 'transparent',
-                        transition: 'all 0.3s',
-                        position: 'relative'
-                      }}
-                      onMouseEnter={(e) => {
-                        if (currentGroup?.id !== group.id) {
-                          e.currentTarget.style.background = '#f5f5f5';
-                        }
-                      }}
-                      onMouseLeave={(e) => {
-                        if (currentGroup?.id !== group.id) {
-                          e.currentTarget.style.background = 'transparent';
-                        }
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                        {group.pinned && <PushpinOutlined style={{ color: '#6366F1', fontSize: '12px' }} />}
-                        <TeamOutlined style={{ color: '#6366F1' }} />
-                        {editingGroupId === group.id ? (
-                          <Input
-                            size="small"
-                            value={editingGroupName}
-                            onChange={(e) => setEditingGroupName(e.target.value)}
-                            onPressEnter={() => handleRenameGroup(group.id, editingGroupName)}
-                            onBlur={() => handleRenameGroup(group.id, editingGroupName)}
-                            autoFocus
-                            style={{ flex: 1, fontSize: '14px' }}
-                          />
-                        ) : (
-                          <span
-                            onClick={() => handleEnterGroup(group)}
-                            style={{ fontSize: '14px', fontWeight: 500, flex: 1 }}
-                          >
-                            {group.name}
-                          </span>
-                        )}
-                        <Dropdown
-                          menu={{
-                            items: [
-                              {
-                                key: 'rename',
-                                icon: <EditOutlined />,
-                                label: '重命名',
-                                onClick: () => {
-                                  setEditingGroupId(group.id);
-                                  setEditingGroupName(group.name);
-                                }
-                              },
-                              {
-                                key: 'pin',
-                                icon: <PushpinOutlined />,
-                                label: group.pinned ? '取消置顶' : '置顶',
-                                onClick: () => handleTogglePinGroup(group.id)
-                              },
-                              {
-                                type: 'divider'
-                              },
-                              {
-                                key: 'delete',
-                                icon: <DeleteOutlined />,
-                                label: '删除群组',
-                                danger: true,
-                                onClick: () => handleDeleteGroup(group.id)
-                              }
-                            ]
-                          }}
-                          trigger={['click']}
-                        >
-                          <EllipsisOutlined
-                            style={{ fontSize: '16px', color: '#999', cursor: 'pointer' }}
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                        </Dropdown>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
-                        {group.members.slice(0, 3).map(member => (
-                          <span key={member.id} style={{ fontSize: '16px' }}>{member.icon}</span>
-                        ))}
-                        {group.members.length > 3 && (
-                          <span style={{ fontSize: '12px', color: '#999' }}>+{group.members.length - 3}</span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                  {agentGroups.length > 5 && (
-                    <div
-                      onClick={() => setShowAllGroups(!showAllGroups)}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        padding: '8px',
-                        cursor: 'pointer',
-                        color: '#6366F1',
-                        fontSize: '14px'
-                      }}
-                    >
-                      {showAllGroups ? '收起' : `查看全部 (${agentGroups.length})`}
-                    </div>
-                  )}
-                </div>
-              )} */}
+            <div style={{ borderTop: '1px solid #f0f0f0', marginBottom: '12px' }} />
+          </div>
+        )}
 
+        {/* 历史记录列表（flex 撑满中间） */}
+        {!(collapsed || !!docPanel) && (
+          <div style={{ flex: 1, overflowY: 'auto', padding: '0 12px' }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: '8px',
+              padding: '0 4px'
+            }}>
+              <span style={{ fontSize: '12px', color: '#999' }}>历史记录</span>
+              <ReloadOutlined style={{ fontSize: '12px', color: '#bbb', cursor: 'pointer' }} />
+            </div>
+            {chatHistory.map(chat => (
               <div
-                onClick={() => {
-                  if (isOpenClawDeployed) {
-                    window.location.hash = 'openclaw';
-                  } else {
-                    setShowOpenClawDeployModal(true);
-                  }
-                }}
+                key={chat.id}
                 style={{
                   padding: '10px 8px',
-                  marginBottom: '8px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
                   borderRadius: '8px',
-                  transition: 'background 0.3s'
+                  marginBottom: '2px',
+                  cursor: 'pointer',
+                  transition: 'background 0.2s'
                 }}
                 onMouseEnter={(e) => e.currentTarget.style.background = '#f5f5f5'}
                 onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
               >
-                <span style={{ fontSize: '16px' }}>🦞</span>
-                <span style={{ fontSize: '14px' }}>OpenClaw</span>
-              </div>
-
-              <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                 <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  marginBottom: '12px'
+                  fontSize: '13px',
+                  color: '#333',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap'
                 }}>
-                  <span style={{ fontSize: '12px', color: '#999' }}>历史对话</span>
-                  <ReloadOutlined style={{ fontSize: '12px', color: '#999', cursor: 'pointer' }} />
+                  {chat.title}
                 </div>
-                <div style={{ flex: 1, overflowY: 'auto' }}>
-                  {chatHistory.map(chat => (
-                    <div
-                      key={chat.id}
-                      style={{
-                        padding: '12px 8px',
-                        borderRadius: '8px',
-                        marginBottom: '4px',
-                        cursor: 'pointer',
-                        transition: 'background 0.3s'
-                      }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = '#f5f5f5'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                    >
-                      <div style={{
-                        fontSize: '14px',
-                        marginBottom: '4px',
-                        color: '#333',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px'
-                      }}>
-                        <span>{chat.title}</span>
-                      </div>
-                      {chat.subtitle && (
-                        <div style={{ fontSize: '12px', color: '#999' }}>
-                          {chat.time && `${chat.time} · `}{chat.subtitle}
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                {chat.subtitle && (
+                  <div style={{ fontSize: '11px', color: '#bbb', marginTop: '2px' }}>
+                    {chat.time && `${chat.time} · `}{chat.subtitle}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* 底部个人中心 */}
+        <Popover
+          open={showPersonalModal}
+          onOpenChange={setShowPersonalModal}
+          trigger="click"
+          placement="topLeft"
+          overlayInnerStyle={{ padding: 0, borderRadius: '12px', overflow: 'hidden', minWidth: '220px' }}
+          content={
+            <div>
+              <div style={{ padding: '16px', display: 'flex', alignItems: 'center', gap: '12px', borderBottom: '1px solid #f0f0f0' }}>
+                <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '18px', fontWeight: 'bold', position: 'relative', flexShrink: 0 }}>
+                  A
+                  <span style={{ position: 'absolute', bottom: '1px', right: '1px', width: '8px', height: '8px', background: '#52c41a', borderRadius: '50%', border: '1.5px solid #fff' }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: '15px', fontWeight: 600, color: '#1a1a1a' }}>Alina</div>
+                  <div style={{ fontSize: '12px', color: '#999' }}>alina@example.com</div>
                 </div>
               </div>
-
-            </>
-          )}
-        </div>
+              <div style={{ padding: '8px' }}>
+                <div
+                  onClick={() => { setShowPersonalModal(false); window.location.hash = 'profile'; }}
+                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', borderRadius: '8px', cursor: 'pointer', transition: 'background 0.2s' }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = '#f5f5f5'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                >
+                  <span style={{ fontSize: '14px', color: '#333' }}>个人中心</span>
+                </div>
+                <div
+                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', borderRadius: '8px', cursor: 'pointer', transition: 'background 0.2s' }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = '#f5f5f5'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                >
+                  <span style={{ fontSize: '14px', color: '#333' }}>锁定屏幕</span>
+                  <span style={{ fontSize: '12px', color: '#bbb' }}>⌥L</span>
+                </div>
+                <div
+                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', borderRadius: '8px', cursor: 'pointer', color: '#ff4d4f', transition: 'background 0.2s' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = '#fff1f0'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                >
+                  <span style={{ fontSize: '14px' }}>退出登录</span>
+                  <span style={{ fontSize: '12px', color: '#ffb3b3' }}>⌥Q</span>
+                </div>
+              </div>
+            </div>
+          }
+        >
         <div style={{ borderTop: '1px solid #f0f0f0', flexShrink: 0 }}>
           <div
-            onClick={onBackToAdmin}
             style={{
               padding: '12px 16px',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              gap: '8px',
-              transition: 'background 0.3s'
+              gap: '10px',
+              transition: 'background 0.2s'
             }}
             onMouseEnter={(e) => e.currentTarget.style.background = '#f5f5f5'}
             onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
           >
-            <SmileOutlined style={{ fontSize: '16px' }} />
-            <span style={{ fontSize: '14px' }}>智能体管理</span>
+            <div style={{
+              width: '34px',
+              height: '34px',
+              borderRadius: '50%',
+              background: 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#fff',
+              fontSize: '16px',
+              fontWeight: 'bold',
+              flexShrink: 0,
+              position: 'relative'
+            }}>
+              A
+              <span style={{
+                position: 'absolute',
+                bottom: '1px',
+                right: '1px',
+                width: '8px',
+                height: '8px',
+                background: '#52c41a',
+                borderRadius: '50%',
+                border: '1.5px solid #fff'
+              }} />
+            </div>
+            {!(collapsed || !!docPanel) && (
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: '13px', fontWeight: 600, color: '#333', lineHeight: '1.3' }}>Alina</div>
+                <div style={{ fontSize: '11px', color: '#999' }}>个人设置 · 进入后台</div>
+              </div>
+            )}
           </div>
         </div>
+        </Popover>
       </Sider>
 
       <Layout style={{ background: '#fafafa' }}>
@@ -2097,8 +2610,135 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
           padding: '24px',
           minHeight: '100vh'
         }}>
-          {/* 智能体中心界面 */}
-          {showAgentCenter ? (
+                    {/* 数字员工面板 */}
+          {showDigitalEmployee ? (
+            <div style={{ width: '100%', maxWidth: '900px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+                <div>
+                  <h2 style={{ fontSize: 22, fontWeight: 700, margin: 0, marginBottom: 4 }}>🤖 数字员工</h2>
+                  <div style={{ fontSize: 13, color: '#999' }}>选择一位数字员工开始对话，对话结束后可为其评分</div>
+                </div>
+                <input
+                  placeholder="搜索员工..."
+                  value={deSearch}
+                  onChange={e => setDeSearch(e.target.value)}
+                  style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #e8e8e8', fontSize: 13, outline: 'none', width: 200 }}
+                />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14 }}>
+                {employeeStore.getEmployees()
+                  .filter(e => e.status === 'published')
+                  .filter(e => !deSearch || e.name.includes(deSearch) || e.dept.includes(deSearch))
+                  .map(emp => {
+                    const isActive = activeDeEmployee?.id === emp.id;
+                    return (
+                      <div
+                        key={emp.id}
+                        style={{
+                          background: '#fff', borderRadius: 12, padding: '16px 18px',
+                          border: isActive ? '1.5px solid #6366F1' : '1px solid #e8e8f0',
+                          cursor: 'pointer', transition: 'all 0.2s',
+                          boxShadow: isActive ? '0 4px 16px rgba(99,102,241,0.15)' : '0 1px 4px rgba(0,0,0,0.04)',
+                        }}
+                        onClick={() => {
+                          setActiveDeEmployee(emp);
+                          setShowDigitalEmployee(false);
+                          // 创建以该员工为对象的新对话
+                          const deAgent: any = {
+                            id: emp.id, name: emp.name,
+                            icon: emp.name.charAt(0), color: '#6366F1',
+                            category: emp.domain, isMultiAgent: false,
+                          };
+                          const convId = `de-conv-${Date.now()}`;
+                          setRatingSessionId(convId);
+                          const newConv: any = {
+                            id: convId, title: `与${emp.name}的对话`,
+                            type: 'agent', agents: [deAgent], messages: [],
+                            createTime: new Date().toISOString(),
+                          };
+                          setConversations((prev: any) => [newConv, ...prev]);
+                          setCurrentConversation(newConv);
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                          <div style={{
+                            width: 40, height: 40, borderRadius: 10, flexShrink: 0,
+                            background: 'linear-gradient(135deg, #6366F1, #8B5CF6)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            color: '#fff', fontSize: 16, fontWeight: 700,
+                          }}>{emp.name.charAt(0)}</div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a', marginBottom: 2 }}>{emp.name}</div>
+                            <div style={{ fontSize: 11, color: '#aaa' }}>{emp.dept} · {emp.domain}</div>
+                          </div>
+                          <div style={{ display: 'flex', gap: 1 }}>
+                            {[1,2,3,4,5].map(i => (
+                              <span key={i} style={{ color: i <= Math.round(emp.score) ? '#F59E0B' : '#e8e8e8', fontSize: 12 }}>★</span>
+                            ))}
+                          </div>
+                        </div>
+                        <div style={{ fontSize: 12, color: '#888', lineHeight: 1.5, marginBottom: 10, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const, overflow: 'hidden' }}>
+                          {emp.description}
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div style={{ display: 'flex', gap: 10 }}>
+                            <span style={{ fontSize: 11, color: '#6366F1', fontWeight: 600 }}>⭐ {emp.score}</span>
+                            <span style={{ fontSize: 11, color: '#999' }}>调用 {emp.callCount >= 1000 ? (emp.callCount/1000).toFixed(1)+'k' : emp.callCount}</span>
+                          </div>
+                          <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: '#eef2ff', color: '#6366F1' }}>开始对话 →</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+          ) : null}
+
+          {/* OpenClaw 面板 */}
+          {showOpenClaw && !showDigitalEmployee ? (
+            <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+              {/* OpenClaw 顶部标签栏 */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexShrink: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ width: 32, height: 32, borderRadius: 8, background: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>🦞</div>
+                  <div>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1a1a', lineHeight: 1.2 }}>OpenClaw</div>
+                    <div style={{ fontSize: 11, color: '#aaa' }}>即时通讯与 AI 网关</div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 2, marginLeft: 16 }}>
+                    {(['chat', 'dashboard'] as const).map(tab => (
+                      <div
+                        key={tab}
+                        onClick={() => setOpenClawTab(tab)}
+                        style={{
+                          padding: '5px 14px', borderRadius: 6, cursor: 'pointer', fontSize: 13,
+                          background: openClawTab === tab ? '#ef4444' : '#f5f5f5',
+                          color: openClawTab === tab ? '#fff' : '#666',
+                          fontWeight: openClawTab === tab ? 600 : 400,
+                          transition: 'all 0.15s',
+                        }}
+                      >
+                        {tab === 'chat' ? '聊天' : '控制台'}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <Button
+                  type="text"
+                  icon={<span style={{ fontSize: '18px' }}>✕</span>}
+                  onClick={() => setShowOpenClaw(false)}
+                  style={{ padding: '4px 8px', borderRadius: '6px', fontSize: '16px', color: '#666' }}
+                />
+              </div>
+              {/* 内容区 */}
+              <div style={{ flex: 1, overflow: 'hidden', borderRadius: 12, border: '1px solid #f0f0f0' }}>
+                {openClawTab === 'chat' ? <OpenClaw /> : <OpenClawDashboard />}
+              </div>
+            </div>
+          ) : null}
+
+          {/* 智能体广场界面 */}
+          {!showDigitalEmployee && showAgentCenter ? (
             <div style={{ width: '100%', maxWidth: '1400px' }}>
               {/* Header */}
               <div style={{
@@ -2107,247 +2747,240 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                 alignItems: 'center',
                 marginBottom: '24px'
               }}>
-                <h2 style={{ fontSize: '24px', fontWeight: 600, margin: 0 }}>智能体中心</h2>
-                <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                <h2 style={{ fontSize: '24px', fontWeight: 700, margin: 0 }}>智能体广场</h2>
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
                   <Button
                     icon={<UserOutlined />}
                     onClick={() => setShowManageDisplay(true)}
+                    style={{ borderRadius: '6px' }}
                   >
                     管理显示
                   </Button>
-                </div>
-              </div>
-
-              {/* 搜索和筛选区域 */}
-              <div style={{ marginBottom: '24px' }}>
-                <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
-                  <Input
-                    placeholder="搜索智能体名称或分类"
-                    prefix={<SearchOutlined />}
-                    style={{ width: '280px' }}
-                    value={agentCenterSearch}
-                    onChange={(e) => setAgentCenterSearch(e.target.value)}
-                    allowClear
-                  />
-                  <Select
-                    value={agentCenterSceneFilter}
-                    onChange={setAgentCenterSceneFilter}
-                    style={{ width: 150 }}
-                  >
-                    <Select.Option value="全部">全部场景</Select.Option>
-                    <Select.Option value="行业分析">行业分析</Select.Option>
-                    <Select.Option value="编程开发">编程开发</Select.Option>
-                    <Select.Option value="数据分析">数据分析</Select.Option>
-                    <Select.Option value="内容创作">内容创作</Select.Option>
-                  </Select>
-                  <Select
-                    value={agentCenterTypeFilter}
-                    onChange={setAgentCenterTypeFilter}
-                    style={{ width: 150 }}
-                  >
-                    <Select.Option value="全部">全部类型</Select.Option>
-                    <Select.Option value="单智能体">单智能体</Select.Option>
-                    <Select.Option value="多智能体">多智能体</Select.Option>
-                  </Select>
                   <Button
-                    onClick={() => {
-                      setAgentCenterSearch('');
-                      setAgentCenterSceneFilter('全部');
-                      setAgentCenterTypeFilter('全部');
-                      setAgentCenterCategory('全部');
-                    }}
-                  >
-                    重置
-                  </Button>
-                </div>
-                <div style={{ color: '#666', fontSize: '14px' }}>
-                  共找到 {allAgents.filter(agent => {
-                    const matchCategory = agentCenterCategory === '全部' || agent.category === agentCenterCategory;
-                    const matchSearch = agentCenterSearch === '' ||
-                      agent.name.toLowerCase().includes(agentCenterSearch.toLowerCase()) ||
-                      agent.category.toLowerCase().includes(agentCenterSearch.toLowerCase());
-                    const matchScene = agentCenterSceneFilter === '全部' || agent.category === agentCenterSceneFilter;
-                    const matchType =
-                      agentCenterTypeFilter === '全部' ||
-                      (agentCenterTypeFilter === '单智能体' && !agent.isMultiAgent) ||
-                      (agentCenterTypeFilter === '多智能体' && agent.isMultiAgent);
-                    return matchCategory && matchSearch && matchScene && matchType;
-                  }).length} 个智能体
+                    type="text"
+                    icon={<span style={{ fontSize: '18px' }}>✕</span>}
+                    onClick={() => setShowAgentCenter(false)}
+                    style={{ padding: '4px 8px', borderRadius: '6px', fontSize: '16px', color: '#666' }}
+                  />
                 </div>
               </div>
 
-              {/* Category Tabs */}
+              {/* 搜索和类型筛选 */}
+              <div style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
+                <Input
+                  placeholder="搜索智能体"
+                  prefix={<SearchOutlined style={{ color: '#bbb' }} />}
+                  style={{ width: '220px', borderRadius: '8px' }}
+                  value={agentCenterSearch}
+                  onChange={(e) => setAgentCenterSearch(e.target.value)}
+                  allowClear
+                />
+                <Select
+                  value={agentCenterTypeFilter}
+                  onChange={setAgentCenterTypeFilter}
+                  style={{ width: 140, borderRadius: '8px' }}
+                  placeholder="智能体类型"
+                >
+                  <Select.Option value="全部">全部类型</Select.Option>
+                  <Select.Option value="单智能体">单智能体</Select.Option>
+                  <Select.Option value="多智能体">多智能体</Select.Option>
+                  <Select.Option value="RAG">RAG</Select.Option>
+                  <Select.Option value="自主规划">自主规划</Select.Option>
+                </Select>
+              </div>
+
+              {/* 分类 Tab */}
               <div style={{
                 display: 'flex',
-                gap: '12px',
-                marginBottom: '32px',
-                borderBottom: '1px solid #f0f0f0',
-                paddingBottom: '12px',
-                flexWrap: 'wrap'
+                gap: '4px',
+                marginBottom: '24px'
               }}>
-                {['全部', '行业分析', '编程开发', '数据分析', '内容创作'].map(cat => (
+                {['全部', '开发', '创��', '办公', '生活'].map(cat => (
                   <div
                     key={cat}
                     onClick={() => setAgentCenterCategory(cat)}
                     style={{
-                      padding: '8px 20px',
+                      padding: '6px 18px',
                       borderRadius: '20px',
-                      background: agentCenterCategory === cat ? '#EEF2FF' : 'transparent',
-                      color: agentCenterCategory === cat ? '#6366F1' : '#666',
-                      cursor: 'pointer',
+                      background: agentCenterCategory === cat ? '#1a1a1a' : 'transparent',
+                      color: agentCenterCategory === cat ? '#fff' : '#555',
                       fontSize: '14px',
-                      fontWeight: agentCenterCategory === cat ? 500 : 400,
-                      transition: 'all 0.3s'
+                      fontWeight: agentCenterCategory === cat ? 600 : 400,
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                      userSelect: 'none' as const
                     }}
+                    onMouseEnter={(e) => { if (agentCenterCategory !== cat) e.currentTarget.style.background = '#f0f0f0'; }}
+                    onMouseLeave={(e) => { if (agentCenterCategory !== cat) e.currentTarget.style.background = 'transparent'; }}
                   >
                     {cat}
                   </div>
                 ))}
               </div>
 
-              {/* Agent Cards Grid */}
+              {/* 智能体卡片 Grid - 4列 */}
               <div style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(450px, 1fr))',
-                gap: '20px'
+                gridTemplateColumns: 'repeat(4, 1fr)',
+                gap: '16px'
               }}>
                 {allAgents
                   .filter(agent => {
-                    const matchCategory = agentCenterCategory === '全部' || agent.category === agentCenterCategory;
                     const matchSearch = agentCenterSearch === '' ||
                       agent.name.toLowerCase().includes(agentCenterSearch.toLowerCase()) ||
                       agent.category.toLowerCase().includes(agentCenterSearch.toLowerCase());
-                    const matchScene = agentCenterSceneFilter === '全部' || agent.category === agentCenterSceneFilter;
                     const matchType =
                       agentCenterTypeFilter === '全部' ||
                       (agentCenterTypeFilter === '单智能体' && !agent.isMultiAgent) ||
-                      (agentCenterTypeFilter === '多智能体' && agent.isMultiAgent);
-                    return matchCategory && matchSearch && matchScene && matchType;
+                      (agentCenterTypeFilter === '多智能体' && agent.isMultiAgent) ||
+                      (agentCenterTypeFilter === 'RAG' && !agent.isMultiAgent) ||
+                      (agentCenterTypeFilter === '自主规划' && agent.isMultiAgent);
+                    const matchCat = agentCenterCategory === '全部' ||
+                      (agentCenterCategory === '开发' && ['编程开发', '数据分析'].includes(agent.category)) ||
+                      (agentCenterCategory === '创作' && ['内容创作'].includes(agent.category)) ||
+                      (agentCenterCategory === '办公' && ['行业分析'].includes(agent.category)) ||
+                      (agentCenterCategory === '生活' && !['行业分析','编程开发','数据分析','内容创作'].includes(agent.category));
+                    return matchSearch && matchType && matchCat;
                   })
-                  .length === 0 ? (
-                    <div style={{
-                      gridColumn: '1 / -1',
-                      textAlign: 'center',
-                      padding: '60px 20px',
-                      background: '#fafafa',
-                      borderRadius: '12px'
-                    }}>
-                      <div style={{ fontSize: '48px', marginBottom: '16px' }}>🔍</div>
-                      <h3 style={{ color: '#666', marginBottom: '8px' }}>未找到相关智能体</h3>
-                      <p style={{ color: '#999' }}>尝试修改搜索关键词或筛选条件</p>
-                    </div>
-                  ) : (
-                    allAgents
-                      .filter(agent => {
-                        const matchCategory = agentCenterCategory === '全部' || agent.category === agentCenterCategory;
-                        const matchSearch = agentCenterSearch === '' ||
-                          agent.name.toLowerCase().includes(agentCenterSearch.toLowerCase()) ||
-                          agent.category.toLowerCase().includes(agentCenterSearch.toLowerCase());
-                        const matchScene = agentCenterSceneFilter === '全部' || agent.category === agentCenterSceneFilter;
-                        const matchType =
-                          agentCenterTypeFilter === '全部' ||
-                          (agentCenterTypeFilter === '单智能体' && !agent.isMultiAgent) ||
-                          (agentCenterTypeFilter === '多智能体' && agent.isMultiAgent);
-                        return matchCategory && matchSearch && matchScene && matchType;
-                      })
-                      .map(agent => (
-                    <div
-                      key={agent.id}
-                      style={{
-                        border: '1px solid #f0f0f0',
-                        borderRadius: '12px',
-                        padding: '20px',
-                        cursor: 'pointer',
-                        transition: 'all 0.3s',
-                        background: '#fff'
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)';
-                        e.currentTarget.style.borderColor = agent.color;
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.boxShadow = 'none';
-                        e.currentTarget.style.borderColor = '#f0f0f0';
-                      }}
-                      onClick={() => {
-                        setShowAgentCenter(false);
-                        setMentionedAgents([agent]);
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
-                        {/* Agent Icon */}
-                        <div style={{
-                          width: '56px',
-                          height: '56px',
-                          background: `${agent.color}22`,
+                  .map(agent => {
+                    const isPinned = squarePinnedAgentIds.includes(agent.id);
+                    const agentTypeLabel = agent.isMultiAgent ? '自主规划' : 'RAG';
+                    return (
+                      <div
+                        key={agent.id}
+                        style={{
+                          background: '#fff',
                           borderRadius: '12px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: '28px',
-                          flexShrink: 0
-                        }}>
-                          {agent.icon}
+                          border: `1px solid ${isPinned ? '#6366F1' : '#eee'}`,
+                          padding: '16px',
+                          cursor: 'pointer',
+                          position: 'relative',
+                          transition: 'all 0.2s',
+                          boxShadow: isPinned ? '0 0 0 1.5px #6366F1' : 'none'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.boxShadow = isPinned
+                            ? '0 0 0 1.5px #6366F1, 0 4px 12px rgba(99,102,241,0.15)'
+                            : '0 4px 12px rgba(0,0,0,0.08)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.boxShadow = isPinned ? '0 0 0 1.5px #6366F1' : 'none';
+                        }}
+                        onClick={() => {
+                          setShowAgentCenter(false);
+                          setMentionedAgents([agent]);
+                        }}
+                      >
+                        {/* 置顶标记 */}
+                        {isPinned && (
+                          <div style={{
+                            position: 'absolute',
+                            top: '0',
+                            right: '0',
+                            padding: '2px 8px',
+                            background: '#EEF2FF',
+                            color: '#6366F1',
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            borderRadius: '0 12px 0 6px'
+                          }}>置顶</div>
+                        )}
+
+                        {/* 图标 + 名称 */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+                          <div style={{
+                            width: '40px',
+                            height: '40px',
+                            background: `${agent.color}22`,
+                            borderRadius: '10px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '22px',
+                            flexShrink: 0
+                          }}>
+                            {agent.icon}
+                          </div>
+                          <span style={{ fontSize: '15px', fontWeight: 600, color: '#1a1a1a', lineHeight: '1.3' }}>
+                            {agent.name}
+                          </span>
                         </div>
 
-                        {/* Agent Info */}
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                            <h3 style={{ fontSize: '16px', fontWeight: 600, margin: 0 }}>{agent.name}</h3>
-                            {agent.isMultiAgent && (
-                              <Tag color="#6366F1" style={{ margin: 0 }}>多智能体</Tag>
-                            )}
-                          </div>
-                          <p style={{
-                            fontSize: '13px',
-                            color: '#999',
-                            margin: '0 0 12px 0',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap'
-                          }}>
-                            {agent.category}
-                          </p>
+                        {/* 描述 */}
+                        <p style={{
+                          fontSize: '13px',
+                          color: '#666',
+                          margin: '0 0 12px 0',
+                          lineHeight: '1.5',
+                          display: '-webkit-box',
+                          WebkitLineClamp: 3,
+                          WebkitBoxOrient: 'vertical' as const,
+                          overflow: 'hidden'
+                        }}>
+                          {agent.category} — {agent.isMultiAgent
+                            ? '支持多智能体协同，处理复杂任务，提供深度分析与决策支持。'
+                            : '基于知识库问答，快速检索专业知识，提供精准解答。'}
+                        </p>
 
-                          {/* Multi-Agent Members */}
-                          {agent.isMultiAgent && agent.multiAgentMembers && agent.multiAgentMembers.length > 0 && (
-                            <div style={{
-                              display: 'flex',
-                              gap: '6px',
-                              flexWrap: 'wrap',
-                              marginTop: '12px',
-                              paddingTop: '12px',
-                              borderTop: '1px solid #f5f5f5'
-                            }}>
-                              <span style={{ fontSize: '12px', color: '#999', marginRight: '4px' }}>成员:</span>
-                              {agent.multiAgentMembers.map((member) => (
-                                <span
-                                  key={member.id}
-                                  style={{
-                                    fontSize: '12px',
-                                    padding: '2px 8px',
-                                    borderRadius: '6px',
-                                    background: `${member.color}15`,
-                                    color: member.color,
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '4px'
-                                  }}
-                                >
-                                  {member.icon} {member.name}
-                                </span>
-                              ))}
-                            </div>
-                          )}
+                        {/* 底部类型标签 + 置顶操作 */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <span style={{
+                            fontSize: '12px',
+                            color: '#888',
+                            padding: '2px 0'
+                          }}>
+                            {agentTypeLabel}
+                          </span>
+                          <div
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSquarePinnedAgentIds(prev =>
+                                prev.includes(agent.id)
+                                  ? prev.filter(id => id !== agent.id)
+                                  : [...prev, agent.id]
+                              );
+                            }}
+                            style={{
+                              fontSize: '11px',
+                              color: isPinned ? '#6366F1' : '#bbb',
+                              cursor: 'pointer',
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              transition: 'all 0.2s'
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.background = '#f0f0f0'}
+                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                          >
+                            {isPinned ? '取消置顶' : '置顶'}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))
-                )}
+                    );
+                  })}
               </div>
+
+              {/* 无结果提示 */}
+              {allAgents.filter(agent => {
+                const matchSearch = agentCenterSearch === '' ||
+                  agent.name.toLowerCase().includes(agentCenterSearch.toLowerCase()) ||
+                  agent.category.toLowerCase().includes(agentCenterSearch.toLowerCase());
+                const matchType =
+                  agentCenterTypeFilter === '全部' ||
+                  (agentCenterTypeFilter === '单智能体' && !agent.isMultiAgent) ||
+                  (agentCenterTypeFilter === '多智能体' && agent.isMultiAgent);
+                return matchSearch && matchType;
+              }).length === 0 && (
+                <div style={{ textAlign: 'center', padding: '60px 0', color: '#999' }}>
+                  <div style={{ fontSize: '40px', marginBottom: '12px' }}>🔍</div>
+                  <div>未找到相关智能体，请修改搜索条件</div>
+                </div>
+              )}
             </div>
+
           ) : (currentGroup || currentConversation) ? (
-            <div style={{ width: '100%', maxWidth: '1000px', height: '100%', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ width: '100%', maxWidth: docPanel ? '100%' : '1000px', height: '100%', display: 'flex', flexDirection: 'row', gap: 0, transition: 'all 0.3s' }}>
+              {/* 左侧对话区 */}
+              <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', transition: 'all 0.3s' }}>
               {/* 对话头部 */}
               <div style={{
                 padding: '16px',
@@ -2356,107 +2989,134 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                 marginBottom: '16px',
                 boxShadow: '0 2px 8px rgba(0,0,0,0.08)'
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    {currentGroup || currentConversation?.type === 'group' ? (
-                      <>
-                        <TeamOutlined style={{ fontSize: '24px', color: '#6366F1' }} />
-                        <div>
-                          <div style={{ fontSize: '18px', fontWeight: 'bold' }}>
-                            {currentGroup?.name || currentConversation?.group?.name}
-                            {currentGroup?.pinned && (
-                              <PushpinOutlined style={{ marginLeft: '8px', fontSize: '14px', color: '#6366F1' }} />
-                            )}
-                          </div>
-                          <div style={{ fontSize: '12px', color: '#999', marginTop: '4px' }}>
-                            {(currentGroup?.members.length || currentConversation?.group?.members.length || 0)} 个成员
-                          </div>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <UserOutlined style={{ fontSize: '24px', color: '#6366F1' }} />
-                        <div>
-                          <div style={{ fontSize: '18px', fontWeight: 'bold' }}>
-                            {currentConversation?.title || '对话'}
-                          </div>
-                          <div style={{ fontSize: '12px', color: '#999', marginTop: '4px' }}>
-                            {currentConversation?.agents?.length || 0} 个智能体
-                          </div>
-                        </div>
-                      </>
-                    )}
+                {showConvShareModal ? (
+                  /* ── 分享模式头部 ── */
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ fontSize: 17, fontWeight: 700, color: '#1a1a1a' }}>选择对话</div>
+                    <button
+                      onClick={() => { setShowConvShareModal(false); setShareSelectedMsgIds(new Set()); }}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 15, color: '#666', padding: '4px 8px', borderRadius: 6 }}
+                    >取消</button>
                   </div>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    {/* 群组操作菜单 */}
-                    {currentGroup && (
-                      <Dropdown
-                        menu={{
-                          items: [
-                            {
-                              key: 'rename',
-                              icon: <EditOutlined />,
-                              label: '重命名群组',
-                              onClick: () => {
-                                Modal.confirm({
-                                  title: '重命名群组',
-                                  content: (
-                                    <Input
-                                      placeholder="输入新的群组名称"
-                                      defaultValue={currentGroup.name}
-                                      id="rename-group-input"
-                                    />
-                                  ),
-                                  okText: '确认',
-                                  cancelText: '取消',
-                                  onOk: () => {
-                                    const input = document.getElementById('rename-group-input') as HTMLInputElement;
-                                    if (input?.value.trim()) {
-                                      handleRenameGroup(currentGroup.id, input.value);
-                                    }
+                ) : (
+                  /* ── 正常模式头部 ── */
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        {currentGroup || currentConversation?.type === 'group' ? (
+                          <>
+                            <TeamOutlined style={{ fontSize: '24px', color: '#6366F1' }} />
+                            <div>
+                              <div style={{ fontSize: '18px', fontWeight: 'bold' }}>
+                                {currentGroup?.name || currentConversation?.group?.name}
+                                {currentGroup?.pinned && (
+                                  <PushpinOutlined style={{ marginLeft: '8px', fontSize: '14px', color: '#6366F1' }} />
+                                )}
+                              </div>
+                              <div style={{ fontSize: '12px', color: '#999', marginTop: '4px' }}>
+                                {(currentGroup?.members.length || currentConversation?.group?.members.length || 0)} 个成员
+                              </div>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div style={{
+                              width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
+                              background: `${currentConversation?.agents?.[0]?.color ?? '#6366F1'}22`,
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              fontSize: 20,
+                            }}>
+                              {currentConversation?.agents?.[0]?.icon ?? '🤖'}
+                            </div>
+                            <div>
+                              <div style={{ fontSize: '16px', fontWeight: 600, color: '#1a1a1a' }}>
+                                {currentConversation?.agents?.[0]?.name || currentConversation?.title || '对话'}
+                              </div>
+                              <div style={{ fontSize: '12px', color: '#10B981', marginTop: '2px', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10B981', display: 'inline-block' }} />
+                                在线
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        {currentGroup && (
+                          <Dropdown
+                            menu={{
+                              items: [
+                                {
+                                  key: 'rename',
+                                  icon: <EditOutlined />,
+                                  label: '重命名群组',
+                                  onClick: () => {
+                                    Modal.confirm({
+                                      title: '重命名群组',
+                                      content: (
+                                        <Input
+                                          placeholder="输入新的群组名称"
+                                          defaultValue={currentGroup.name}
+                                          id="rename-group-input"
+                                        />
+                                      ),
+                                      okText: '确认',
+                                      cancelText: '取消',
+                                      onOk: () => {
+                                        const input = document.getElementById('rename-group-input') as HTMLInputElement;
+                                        if (input?.value.trim()) {
+                                          handleRenameGroup(currentGroup.id, input.value);
+                                        }
+                                      }
+                                    });
                                   }
-                                });
-                              }
-                            },
-                            {
-                              key: 'pin',
-                              icon: <PushpinOutlined />,
-                              label: currentGroup.pinned ? '取消置顶' : '置顶群组',
-                              onClick: () => handleTogglePinGroup(currentGroup.id)
-                            },
-                            {
-                              type: 'divider'
-                            },
-                            {
-                              key: 'delete',
-                              icon: <DeleteOutlined />,
-                              label: '删除群组',
-                              danger: true,
-                              onClick: () => handleDeleteGroup(currentGroup.id)
-                            }
-                          ]
-                        }}
-                        trigger={['click']}
-                      >
-                        <Button icon={<EllipsisOutlined />}>管理</Button>
-                      </Dropdown>
+                                },
+                                {
+                                  key: 'pin',
+                                  icon: <PushpinOutlined />,
+                                  label: currentGroup.pinned ? '取消置顶' : '置顶群组',
+                                  onClick: () => handleTogglePinGroup(currentGroup.id)
+                                },
+                                { type: 'divider' },
+                                {
+                                  key: 'delete',
+                                  icon: <DeleteOutlined />,
+                                  label: '删除群组',
+                                  danger: true,
+                                  onClick: () => handleDeleteGroup(currentGroup.id)
+                                }
+                              ]
+                            }}
+                            trigger={['click']}
+                          >
+                            <Button icon={<EllipsisOutlined />}>管理</Button>
+                          </Dropdown>
+                        )}
+                        <Tooltip title="分享对话">
+                          <Button
+                            type="text"
+                            icon={<ShareAltOutlined />}
+                            onClick={() => {
+                              setShareSelectedMsgIds(new Set());
+                              setShowConvShareModal(true);
+                            }}
+                            style={{ color: '#555' }}
+                          />
+                        </Tooltip>
+                      </div>
+                    </div>
+                    {/* 仅群组对话显示成员标签 */}
+                    {(currentGroup || currentConversation?.type === 'group') && (
+                      <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
+                        {(currentGroup?.members || currentConversation?.agents || currentConversation?.group?.members || []).map(member => (
+                          <Tag key={member.id} style={{ padding: '4px 12px', borderRadius: '12px' }}>
+                            <span style={{ marginRight: '4px' }}>{member.icon}</span>
+                            {member.name}
+                          </Tag>
+                        ))}
+                      </div>
                     )}
-                    <Button onClick={() => {
-                      setCurrentConversation(null);
-                      setCurrentGroup(null);
-                      setAgentReplyQueue([]);
-                      setCurrentReplyingAgent(null);
-                    }}>退出对话</Button>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
-                  {(currentGroup?.members || currentConversation?.agents || currentConversation?.group?.members || []).map(member => (
-                    <Tag key={member.id} style={{ padding: '4px 12px', borderRadius: '12px' }}>
-                      <span style={{ marginRight: '4px' }}>{member.icon}</span>
-                      {member.name}
-                    </Tag>
-                  ))}
-                </div>
+                  </>
+                )}
               </div>
 
               {/* 消息列表 */}
@@ -2513,17 +3173,81 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                       </div>
                     )}
 
-                    {(currentConversation?.messages || messages).map(msg => (
-                    <div key={msg.id} style={{ marginBottom: '24px' }}>
+                    {(currentConversation?.messages || messages).map(msg => {
+                      const isShareSelected = shareSelectedMsgIds.has(msg.id);
+                      const toggleShare = () => {
+                        setShareSelectedMsgIds(prev => {
+                          const next = new Set(prev);
+                          next.has(msg.id) ? next.delete(msg.id) : next.add(msg.id);
+                          return next;
+                        });
+                      };
+                    return (
+                    <div
+                      key={msg.id}
+                      style={{ marginBottom: '24px', position: 'relative' }}
+                      onClick={showConvShareModal ? toggleShare : undefined}
+                    >
                       {msg.role === 'user' ? (
-                        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'flex-start', gap: 8 }}>
+                          {/* 分享模式：左侧勾选框 */}
+                          {showConvShareModal && (
+                            <div style={{
+                              width: 20, height: 20, borderRadius: 5, flexShrink: 0, marginTop: 4,
+                              border: `2px solid ${isShareSelected ? '#1677ff' : '#d9d9d9'}`,
+                              background: isShareSelected ? '#1677ff' : '#fff',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              cursor: 'pointer', transition: 'all 0.12s',
+                            }}>
+                              {isShareSelected && <CheckOutlined style={{ color: '#fff', fontSize: 11 }} />}
+                            </div>
+                          )}
+                          {/* 正常模式：... 菜单 */}
+                          {!showConvShareModal && (
+                          <Dropdown
+                            trigger={['click']}
+                            menu={{
+                              items: [
+                                {
+                                  key: 'report',
+                                  icon: <ExclamationCircleOutlined style={{ color: '#f59e0b' }} />,
+                                  label: '反馈与举报',
+                                  onClick: () => { setShowFeedbackModal(true); },
+                                },
+                                { type: 'divider' },
+                                {
+                                  key: 'delete',
+                                  icon: <DeleteOutlined style={{ color: '#ff4d4f' }} />,
+                                  label: <span style={{ color: '#ff4d4f' }}>删除</span>,
+                                  onClick: () => {
+                                    const updater = (prev: Conversation | null) => prev ? {
+                                      ...prev,
+                                      messages: prev.messages.filter(m => m.id !== msg.id),
+                                    } : null;
+                                    setCurrentConversation(updater);
+                                    setConversations(prev => prev.map(c => c.id === currentConversation?.id ? {
+                                      ...c, messages: c.messages.filter(m => m.id !== msg.id)
+                                    } : c));
+                                  },
+                                },
+                              ],
+                            }}
+                          >
+                            <Button type="text" size="small" icon={<EllipsisOutlined />}
+                              style={{ color: '#bbb', padding: '0 4px', marginBottom: 2 }} />
+                          </Dropdown>
+                          )}
                           <div style={{
                             maxWidth: '70%',
                             padding: '12px 16px',
-                            background: 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)',
-                            color: '#fff',
+                            background: showConvShareModal
+                              ? (isShareSelected ? 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)' : '#e8e8e8')
+                              : 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)',
+                            color: showConvShareModal && !isShareSelected ? '#555' : '#fff',
                             borderRadius: '12px',
-                            fontSize: '14px'
+                            fontSize: '14px',
+                            cursor: showConvShareModal ? 'pointer' : 'default',
+                            transition: 'all 0.15s',
                           }}>
                             {msg.content}
                           </div>
@@ -2534,8 +3258,41 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                             {msg.agentIcon}
                           </Avatar>
                           <div style={{ flex: 1 }}>
-                            <div style={{ fontSize: '12px', color: '#999', marginBottom: '6px' }}>
-                              {msg.agentName}
+                            <div style={{ fontSize: '12px', color: '#999', marginBottom: '6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <span>{msg.agentName}</span>
+                              <Dropdown
+                                trigger={['click']}
+                                placement="bottomRight"
+                                menu={{
+                                  items: [
+                                    {
+                                      key: 'report',
+                                      icon: <ExclamationCircleOutlined style={{ color: '#f59e0b' }} />,
+                                      label: '反馈与举报',
+                                      onClick: () => setShowFeedbackModal(true),
+                                    },
+                                    { type: 'divider' },
+                                    {
+                                      key: 'delete',
+                                      icon: <DeleteOutlined style={{ color: '#ff4d4f' }} />,
+                                      label: <span style={{ color: '#ff4d4f' }}>删除</span>,
+                                      onClick: () => {
+                                        const updater = (prev: Conversation | null) => prev ? {
+                                          ...prev,
+                                          messages: prev.messages.filter(m => m.id !== msg.id),
+                                        } : null;
+                                        setCurrentConversation(updater);
+                                        setConversations(prev => prev.map(c => c.id === currentConversation?.id ? {
+                                          ...c, messages: c.messages.filter(m => m.id !== msg.id)
+                                        } : c));
+                                      },
+                                    },
+                                  ],
+                                }}
+                              >
+                                <Button type="text" size="small" icon={<EllipsisOutlined />}
+                                  style={{ color: '#ccc', padding: '0 4px' }} />
+                              </Dropdown>
                             </div>
 
                             {/* Thinking 状态 */}
@@ -2762,7 +3519,43 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                                 marginTop: '8px',
                                 border: msg.isCollaborationResult ? '1px solid #BAE6FD' : '1px solid #E5E7EB'
                               }}>
-                                <div style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</div>
+                                {/* 若该消息已转为文档，显示文档卡片 */}
+                                {convertedMsgIds.has(msg.id) ? (
+                                  <div
+                                    onClick={() => {
+                                      if (!docPanel || docPanel.sourceMessageId !== msg.id) {
+                                        handleConvertToDoc(msg);
+                                      }
+                                    }}
+                                    style={{
+                                      display: 'flex', alignItems: 'center', gap: 12,
+                                      padding: '12px 14px', borderRadius: 10,
+                                      border: '1.5px solid #6366F1', background: '#fafbff',
+                                      cursor: 'pointer', marginBottom: 8, transition: 'all 0.2s',
+                                    }}
+                                    onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 2px 8px rgba(99,102,241,0.15)'; }}
+                                    onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; }}
+                                  >
+                                    <div style={{
+                                      width: 36, height: 36, borderRadius: 8, flexShrink: 0,
+                                      background: 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)',
+                                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    }}>
+                                      <FileTextOutlined style={{ color: '#fff', fontSize: 16 }} />
+                                    </div>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                      <div style={{ fontSize: 14, fontWeight: 600, color: '#1a1a1a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                        {msg.content.split('\n')[0].replace(/^#+\s*/, '').slice(0, 40) || '未命名文档'}
+                                      </div>
+                                      <div style={{ fontSize: 12, color: '#999', marginTop: 2 }}>
+                                        文档 · 点击查看编辑
+                                      </div>
+                                    </div>
+                                    <FileTextOutlined style={{ color: '#6366F1', fontSize: 20, flexShrink: 0 }} />
+                                  </div>
+                                ) : (
+                                  <div style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</div>
+                                )}
 
                                 {/* 协作结果展开按钮 */}
                                 {msg.isCollaborationResult && msg.subTaskResults && (
@@ -2859,18 +3652,362 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                                     ))}
                                   </div>
                                 )}
+
+                                {/* 生成文档 按钮（仅已完成且未转换时显示） */}
+                                {!convertedMsgIds.has(msg.id) && (
+                                  <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <Button
+                                      size="small"
+                                      icon={<FileTextOutlined />}
+                                      onClick={() => handleConvertToDoc(msg)}
+                                      style={{ borderRadius: 6, fontSize: 12, color: '#6366F1', borderColor: '#c7d2fe', background: '#f5f3ff', fontWeight: 500 }}
+                                    >
+                                      生成文档
+                                    </Button>
+                                    <span style={{ fontSize: 12, color: '#bbb' }}>将内容生成为可编辑文档</span>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {/* ── 消息操作栏：重新生成 / 点赞 / 点踩 / 复制 / 分享 ── */}
+                            {msg.status === 'completed' && !showConvShareModal && (
+                              <div style={{
+                                display: 'flex', alignItems: 'center', gap: 2,
+                                marginTop: 10, paddingTop: 10, borderTop: '1px solid #f0f0f0',
+                              }}>
+                                <Tooltip title="重新生成">
+                                  <Button type="text" size="small"
+                                    icon={<SyncOutlined style={{ fontSize: 14, color: '#bbb' }} />}
+                                    style={{ padding: '0 6px' }}
+                                    onClick={() => {
+                                      const msgs = currentConversation?.messages || messages;
+                                      const prevUser = msgs.slice(0, msgs.findIndex(m => m.id === msg.id)).reverse().find(m => m.role === 'user');
+                                      if (prevUser) { setInputValue(prevUser.content); setTimeout(() => handleSendMessage(), 0); }
+                                    }}
+                                  />
+                                </Tooltip>
+                                <div style={{ width: 1, height: 14, background: '#e8e8e8', margin: '0 2px' }} />
+                                <Tooltip title="点赞">
+                                  <Button type="text" size="small"
+                                    icon={<LikeOutlined style={{ fontSize: 14, color: likedMsgIds.has(msg.id) ? '#6366F1' : '#bbb' }} />}
+                                    style={{ padding: '0 6px' }}
+                                    onClick={() => setLikedMsgIds(prev => {
+                                      const s = new Set(prev);
+                                      if (s.has(msg.id)) { s.delete(msg.id); } else { s.add(msg.id); setDislikedMsgIds(d => { const ds = new Set(d); ds.delete(msg.id); return ds; }); }
+                                      return s;
+                                    })}
+                                  />
+                                </Tooltip>
+                                <Tooltip title="点踩">
+                                  <Button type="text" size="small"
+                                    icon={<DislikeOutlined style={{ fontSize: 14, color: dislikedMsgIds.has(msg.id) ? '#ef4444' : '#bbb' }} />}
+                                    style={{ padding: '0 6px' }}
+                                    onClick={() => setDislikedMsgIds(prev => {
+                                      const s = new Set(prev);
+                                      if (s.has(msg.id)) { s.delete(msg.id); } else { s.add(msg.id); setLikedMsgIds(d => { const ds = new Set(d); ds.delete(msg.id); return ds; }); }
+                                      return s;
+                                    })}
+                                  />
+                                </Tooltip>
+                                <Tooltip title={copiedMsgIds.has(msg.id) ? '已复制' : '复制'}>
+                                  <Button type="text" size="small"
+                                    icon={copiedMsgIds.has(msg.id)
+                                      ? <CheckOutlined style={{ fontSize: 14, color: '#10B981' }} />
+                                      : <CopyOutlined style={{ fontSize: 14, color: '#bbb' }} />}
+                                    style={{ padding: '0 6px' }}
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(msg.content).then(() => {
+                                        setCopiedMsgIds(prev => { const s = new Set(prev); s.add(msg.id); return s; });
+                                        setTimeout(() => setCopiedMsgIds(prev => { const s = new Set(prev); s.delete(msg.id); return s; }), 2000);
+                                      });
+                                    }}
+                                  />
+                                </Tooltip>
+                                <Tooltip title="分享">
+                                  <Button type="text" size="small"
+                                    icon={<ShareAltOutlined style={{ fontSize: 14, color: '#bbb' }} />}
+                                    style={{ padding: '0 6px' }}
+                                    onClick={() => {
+                                      setShareSelectedMsgIds(new Set([msg.id]));
+                                      setShowConvShareModal(true);
+                                    }}
+                                  />
+                                </Tooltip>
                               </div>
                             )}
                           </div>
                         </div>
                       )}
                     </div>
-                  ))}
+                    ); })}
+
                 </>
               )}
               </div>
 
-              {/* 输入框区域 */}
+              {/* 输入框区域 / 分享工具栏 */}
+              {showConvShareModal ? (() => {
+                const allMsgs = currentConversation?.messages ?? messages;
+                const visibleMsgs = allMsgs.filter(m => m.role === 'user' || m.role === 'assistant');
+                const allSelected = visibleMsgs.length > 0 && visibleMsgs.every(m => shareSelectedMsgIds.has(m.id));
+                const expiryOptions: Array<[string, string]> = [['7d','7天有效'],['30d','30天有效'],['90d','90天有效'],['forever','永久有效']];
+                return (
+                  <div style={{
+                    background: '#fff',
+                    borderRadius: '12px',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+                    padding: '12px 16px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                  }}>
+                    {/* 全选 */}
+                    <div
+                      onClick={() => {
+                        if (allSelected) setShareSelectedMsgIds(new Set());
+                        else setShareSelectedMsgIds(new Set(visibleMsgs.map(m => m.id)));
+                      }}
+                      style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', userSelect: 'none', flexShrink: 0 }}
+                    >
+                      <div style={{
+                        width: 18, height: 18, borderRadius: 4,
+                        border: `2px solid ${allSelected ? '#6366F1' : '#d9d9d9'}`,
+                        background: allSelected ? '#6366F1' : '#fff',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}>
+                        {allSelected && <CheckOutlined style={{ color: '#fff', fontSize: 10 }} />}
+                      </div>
+                      <span style={{ fontSize: 13, color: '#333' }}>全选</span>
+                    </div>
+
+
+                    {/* 允许其他用户访问聊天中的文件 */}
+                    <div
+                      onClick={() => shareSelectedMsgIds.size > 0 && setShareAllowFileAccess(v => !v)}
+                      style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: shareSelectedMsgIds.size > 0 ? 'pointer' : 'not-allowed', userSelect: 'none', flexShrink: 0, opacity: shareSelectedMsgIds.size > 0 ? 1 : 0.4 }}
+                    >
+                      <div style={{
+                        width: 18, height: 18, borderRadius: 4,
+                        border: `2px solid ${shareAllowFileAccess && shareSelectedMsgIds.size > 0 ? '#6366F1' : '#d9d9d9'}`,
+                        background: shareAllowFileAccess && shareSelectedMsgIds.size > 0 ? '#6366F1' : '#fff',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}>
+                        {shareAllowFileAccess && shareSelectedMsgIds.size > 0 && <CheckOutlined style={{ color: '#fff', fontSize: 10 }} />}
+                      </div>
+                      <span style={{ fontSize: 13, color: shareSelectedMsgIds.size > 0 ? '#333' : '#aaa' }}>允许其他用户访问聊天中的文件</span>
+                    </div>
+
+                    <div style={{ flex: 1 }} />
+
+                    {/* 更多操作：反馈与举报 / 删除 */}
+                    <Dropdown
+                      trigger={['click']}
+                      placement="topRight"
+                      menu={{
+                        items: [
+                          {
+                            key: 'report',
+                            icon: <ExclamationCircleOutlined style={{ color: '#F59E0B' }} />,
+                            label: '反馈与举报',
+                            onClick: () => {
+                              Modal.confirm({
+                                title: '反馈与举报',
+                                icon: <ExclamationCircleOutlined style={{ color: '#F59E0B' }} />,
+                                content: (
+                                  <div style={{ paddingTop: 8 }}>
+                                    <div style={{ fontSize: 13, color: '#555', marginBottom: 12 }}>请选择举报原因：</div>
+                                    {['内容不准确 / 有误导性', '涉及违法违规内容', '存在隐私泄露风险', '重复或无意义内容', '其他问题'].map(reason => (
+                                      <div
+                                        key={reason}
+                                        style={{
+                                          padding: '8px 12px', borderRadius: 6, marginBottom: 6,
+                                          border: '1px solid #e8e8e8', cursor: 'pointer', fontSize: 13, color: '#333',
+                                          transition: 'all 0.15s',
+                                        }}
+                                        onMouseEnter={e => { e.currentTarget.style.borderColor = '#6366F1'; e.currentTarget.style.background = '#EEF2FF'; e.currentTarget.style.color = '#6366F1'; }}
+                                        onMouseLeave={e => { e.currentTarget.style.borderColor = '#e8e8e8'; e.currentTarget.style.background = ''; e.currentTarget.style.color = '#333'; }}
+                                        onClick={() => { Modal.destroyAll(); message.success('感谢您的反馈，我们会尽快处理'); }}
+                                      >
+                                        {reason}
+                                      </div>
+                                    ))}
+                                  </div>
+                                ),
+                                footer: null,
+                                width: 400,
+                              });
+                            },
+                          },
+                          { type: 'divider' },
+                          {
+                            key: 'delete',
+                            icon: <DeleteOutlined style={{ color: '#ef4444' }} />,
+                            label: <span style={{ color: '#ef4444' }}>删除</span>,
+                            disabled: shareSelectedMsgIds.size === 0,
+                            onClick: () => {
+                              Modal.confirm({
+                                title: '确认删除',
+                                icon: <ExclamationCircleOutlined style={{ color: '#ef4444' }} />,
+                                content: `确定删除选中的 ${shareSelectedMsgIds.size} 条消息？此操作不可撤销。`,
+                                okText: '删除',
+                                cancelText: '取消',
+                                okButtonProps: { danger: true },
+                                onOk: () => {
+                                  const idsToDelete = new Set(shareSelectedMsgIds);
+                                  if (currentConversation) {
+                                    setCurrentConversation(prev => prev ? {
+                                      ...prev,
+                                      messages: prev.messages.filter(m => !idsToDelete.has(m.id)),
+                                    } : null);
+                                    setConversations(prev => prev.map(conv =>
+                                      conv.id === currentConversation.id
+                                        ? { ...conv, messages: conv.messages.filter(m => !idsToDelete.has(m.id)) }
+                                        : conv
+                                    ));
+                                  } else {
+                                    setMessages(prev => prev.filter(m => !idsToDelete.has(m.id)));
+                                  }
+                                  setShareSelectedMsgIds(new Set());
+                                  message.success('已删除选中消息');
+                                },
+                              });
+                            },
+                          },
+                        ],
+                      }}
+                    >
+                      <Button
+                        size="small"
+                        icon={<EllipsisOutlined />}
+                        style={{ borderRadius: 8 }}
+                      />
+                    </Dropdown>
+
+                    {/* 分享图片 */}
+                    <Button
+                      size="small"
+                      disabled={shareSelectedMsgIds.size === 0}
+                      loading={shareImageLoading}
+                      icon={<span style={{ fontSize: 13 }}>🖼️</span>}
+                      style={{ borderRadius: 8, fontWeight: 500 }}
+                      onClick={async () => {
+                        if (!sharePreviewRef.current) return;
+                        setShareImageLoading(true);
+                        try {
+                          const canvas = await html2canvas(sharePreviewRef.current, {
+                            scale: 2, backgroundColor: '#fff', useCORS: true, logging: false,
+                          });
+                          const url = canvas.toDataURL('image/png');
+                          setShareImageDataUrl(url);
+                          setShowShareImagePreview(true);
+                        } catch {
+                          message.error('图片生成失败，请重试');
+                        } finally {
+                          setShareImageLoading(false);
+                        }
+                      }}
+                    >
+                      分享图片
+                    </Button>
+
+                    {/* 复制链接 + 时效 Popover */}
+                    <Popover
+                      trigger="click"
+                      placement="topRight"
+                      content={
+                        <div style={{ minWidth: 140 }}>
+                          {expiryOptions.map(([key, label]) => (
+                            <div
+                              key={key}
+                              onClick={() => {
+                                setConvShareExpiry(key as typeof convShareExpiry);
+                                const link = `${window.location.origin}/share/conv-${currentConversation?.id ?? 'demo'}?exp=${key}&msgs=${shareSelectedMsgIds.size}&files=${shareAllowFileAccess ? 1 : 0}`;
+                                navigator.clipboard.writeText(link).then(() => {
+                                  message.success(`链接已复制（${label}）`);
+                                  setShowConvShareModal(false);
+                                  setShareSelectedMsgIds(new Set());
+                                });
+                              }}
+                              style={{
+                                padding: '8px 12px', cursor: 'pointer', borderRadius: 6,
+                                fontSize: 13, color: convShareExpiry === key ? '#6366F1' : '#333',
+                                fontWeight: convShareExpiry === key ? 600 : 400,
+                                background: convShareExpiry === key ? '#EEF2FF' : 'transparent',
+                                transition: 'background 0.15s',
+                              }}
+                            >
+                              {label}
+                            </div>
+                          ))}
+                        </div>
+                      }
+                    >
+                      <Button
+                        type="primary"
+                        size="small"
+                        disabled={shareSelectedMsgIds.size === 0}
+                        icon={<CopyOutlined />}
+                        style={{ borderRadius: 8, background: '#6366F1', borderColor: '#6366F1', fontWeight: 600 }}
+                      >
+                        复制链接
+                      </Button>
+                    </Popover>
+
+                    {/* 隐藏截图区域 */}
+                    <div
+                      ref={sharePreviewRef}
+                      style={{
+                        position: 'fixed', left: -9999, top: 0,
+                        width: 560, background: '#fff',
+                        padding: '28px 28px 20px',
+                        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
+                        <div style={{ width: 36, height: 36, borderRadius: 9, background: 'linear-gradient(135deg, #6366F1, #8B5CF6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>🤖</div>
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: 15, color: '#1a1a1a' }}>{currentConversation?.title ?? 'AI 对话'}</div>
+                          <div style={{ fontSize: 12, color: '#aaa' }}>智能助手平台</div>
+                        </div>
+                      </div>
+                      <div style={{ height: 1, background: '#f0f0f0', marginBottom: 18 }} />
+                      {(currentConversation?.messages ?? messages)
+                        .filter(m => shareSelectedMsgIds.has(m.id))
+                        .map(msg => {
+                          const isUser = msg.role === 'user';
+                          return (
+                            <div key={msg.id} style={{ marginBottom: 14 }}>
+                              {!isUser ? (
+                                <div style={{ background: '#fafafa', border: '1px solid #eeecfd', borderRadius: 10, padding: '14px 16px' }}>
+                                  {msg.content.split('\n')[0] && (
+                                    <div style={{ fontWeight: 700, fontSize: 15, color: '#1a1a1a', marginBottom: 6 }}>
+                                      {msg.content.split('\n')[0].replace(/^#+\s*/, '')}
+                                    </div>
+                                  )}
+                                  <div style={{ fontSize: 13, color: '#444', lineHeight: 1.8, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                                    {msg.content.split('\n').slice(1).join('\n') || msg.content}
+                                  </div>
+                                </div>
+                              ) : (
+                                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                                  <div style={{ background: '#6366F1', color: '#fff', borderRadius: '14px 14px 4px 14px', padding: '10px 14px', fontSize: 13, lineHeight: 1.65, maxWidth: '76%', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                                    {msg.content}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, marginTop: 16, paddingTop: 12, borderTop: '1px solid #f0f0f0' }}>
+                        <span style={{ fontSize: 11, color: '#ccc' }}>由</span>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: '#6366F1' }}>智能助手平台</span>
+                        <span style={{ fontSize: 11, color: '#ccc' }}>生成</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })() : (
               <div style={{
                 background: '#fff',
                 borderRadius: '12px',
@@ -2954,11 +4091,446 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                   </Button>
                 </div>
               </div>
+              )}
             </div>
+            {/* 右侧：文档编辑器面板 */}
+            {docPanel && (
+              <div style={{
+                ...(docFullScreen ? {
+                  position: 'fixed' as const, inset: 0, zIndex: 9999,
+                  width: '100vw', height: '100vh', borderRadius: 0,
+                } : {
+                  width: docPanelWidth, flexShrink: 0, height: '100%',
+                  borderRadius: '0 12px 12px 0',
+                }),
+                borderLeft: '1px solid #e8e8e8', background: '#fff',
+                display: 'flex', flexDirection: 'column',
+                boxShadow: '-2px 0 12px rgba(0,0,0,0.06)', overflow: 'hidden',
+                position: 'relative' as const,
+              }}>
+                {/* 拖拽调整宽度的把手 */}
+                {!docFullScreen && (
+                  <div
+                    onMouseDown={e => {
+                      docResizingRef.current = true;
+                      docResizeStartX.current = e.clientX;
+                      docResizeStartWidth.current = docPanelWidth;
+                      const onMove = (ev: MouseEvent) => {
+                        if (!docResizingRef.current) return;
+                        const delta = docResizeStartX.current - ev.clientX;
+                        setDocPanelWidth(Math.max(320, Math.min(800, docResizeStartWidth.current + delta)));
+                      };
+                      const onUp = () => {
+                        docResizingRef.current = false;
+                        window.removeEventListener('mousemove', onMove);
+                        window.removeEventListener('mouseup', onUp);
+                      };
+                      window.addEventListener('mousemove', onMove);
+                      window.addEventListener('mouseup', onUp);
+                    }}
+                    style={{
+                      position: 'absolute', left: 0, top: 0, bottom: 0, width: 5,
+                      cursor: 'col-resize', zIndex: 10,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}
+                  >
+                    <div style={{ width: 3, height: 40, borderRadius: 2, background: '#d1d5db', transition: 'background 0.2s' }}
+                      onMouseEnter={e => (e.currentTarget.style.background = '#6366F1')}
+                      onMouseLeave={e => (e.currentTarget.style.background = '#d1d5db')}
+                    />
+                  </div>
+                )}
+                {/* 顶部工具栏 */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderBottom: '1px solid #f0f0f0', background: '#fafafa', flexShrink: 0 }}>
+                  {/* 左侧：时间 + undo/redo */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <FileTextOutlined style={{ fontSize: 15, color: '#6366F1' }} />
+                    <span style={{ fontSize: 12, color: '#999' }}>修改于 {docUpdatedAt}</span>
+                    <div style={{ width: 1, height: 14, background: '#e8e8e8', margin: '0 2px' }} />
+                    <Tooltip title={`撤销${docHistoryIndex <= 0 ? '（无可撤销）' : ''}`}>
+                      <Button type="text" size="small" icon={<UndoOutlined />} disabled={docHistoryIndex <= 0} onClick={handleDocUndo} style={{ padding: '0 6px', color: docHistoryIndex <= 0 ? '#ccc' : '#555' }} />
+                    </Tooltip>
+                    <Tooltip title={`重做${docHistoryIndex >= docHistory.length - 1 ? '（无可重做）' : ''}`}>
+                      <Button type="text" size="small" icon={<RedoOutlined />} disabled={docHistoryIndex >= docHistory.length - 1} onClick={handleDocRedo} style={{ padding: '0 6px', color: docHistoryIndex >= docHistory.length - 1 ? '#ccc' : '#555' }} />
+                    </Tooltip>
+                  </div>
+                  {/* 右侧操作 */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <Tooltip title={docCopied ? '已复制' : '复制'}>
+                      <Button type="text" size="small" icon={docCopied ? <CheckOutlined style={{ color: '#10B981' }} /> : <CopyOutlined />} onClick={handleDocCopy} style={{ padding: '0 7px', color: '#555' }} />
+                    </Tooltip>
+                    {/* 下载下拉菜单 */}
+                    <Dropdown
+                      open={showDownloadMenu}
+                      onOpenChange={setShowDownloadMenu}
+                      trigger={['click']}
+                      placement="bottomRight"
+                      menu={{
+                        items: [
+                          {
+                            key: 'word',
+                            label: (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 0' }}>
+                                <div style={{ width: 28, height: 28, borderRadius: 6, background: '#2b579a', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>W</div>
+                                <span style={{ fontSize: 14 }}>Word</span>
+                              </div>
+                            ),
+                            onClick: () => handleDocDownloadFormat('word'),
+                          },
+                          {
+                            key: 'pdf',
+                            label: (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 0' }}>
+                                <div style={{ width: 28, height: 28, borderRadius: 6, background: '#d93025', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>P</div>
+                                <span style={{ fontSize: 14 }}>PDF</span>
+                              </div>
+                            ),
+                            onClick: () => handleDocDownloadFormat('pdf'),
+                          },
+                          {
+                            key: 'markdown',
+                            label: (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 0' }}>
+                                <div style={{ width: 28, height: 28, borderRadius: 6, background: '#6366F1', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 10, fontWeight: 700, flexShrink: 0 }}>MD</div>
+                                <span style={{ fontSize: 14 }}>Markdown</span>
+                              </div>
+                            ),
+                            onClick: () => handleDocDownloadFormat('markdown'),
+                          },
+                        ],
+                        style: { minWidth: 160, padding: '4px' },
+                      }}
+                    >
+                      <Tooltip title="下载">
+                        <Button type="text" size="small" icon={<DownloadOutlined />} style={{ padding: '0 7px', color: '#555' }} />
+                      </Tooltip>
+                    </Dropdown>
+                    <Tooltip title="分享">
+                      <Button type="text" size="small" icon={<ShareAltOutlined />} onClick={handleDocShare} style={{ padding: '0 7px', color: '#555' }} />
+                    </Tooltip>
+                    <Tooltip title="评论">
+                      <Button type="text" size="small" icon={<MessageOutlined />} onClick={() => setShowDocComments(v => !v)}
+                        style={{ padding: '0 7px', color: showDocComments ? '#6366F1' : '#555', background: showDocComments ? '#EEF2FF' : 'transparent', borderRadius: 4 }} />
+                    </Tooltip>
+                    {/* 更多菜单 */}
+                    <Dropdown
+                      open={showMoreMenu}
+                      onOpenChange={setShowMoreMenu}
+                      trigger={['click']}
+                      placement="bottomRight"
+                      menu={{
+                        style: { minWidth: 200, padding: '4px 0', borderRadius: 10, boxShadow: '0 4px 20px rgba(0,0,0,0.12)' },
+                        items: [
+                          {
+                            key: 'find',
+                            label: (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '2px 0' }}>
+                                <SearchOutlined style={{ fontSize: 15, color: '#555' }} />
+                                <span>查找和替换</span>
+                              </div>
+                            ),
+                            onClick: () => { setShowFindReplace(true); setShowMoreMenu(false); },
+                          },
+                          { type: 'divider' },
+                          {
+                            key: 'copylink',
+                            label: (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '2px 0' }}>
+                                <LinkOutlined style={{ fontSize: 15, color: '#555' }} />
+                                <span>复制链接</span>
+                              </div>
+                            ),
+                            onClick: handleCopyDocLink,
+                          },
+                          {
+                            key: 'copy',
+                            label: (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '2px 0' }}>
+                                <FileAddOutlined style={{ fontSize: 15, color: '#555' }} />
+                                <span>创建副本</span>
+                              </div>
+                            ),
+                            onClick: handleCreateDocCopy,
+                          },
+                          {
+                            key: 'print',
+                            label: (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '2px 0' }}>
+                                <PrinterOutlined style={{ fontSize: 15, color: '#555' }} />
+                                <span>打印</span>
+                              </div>
+                            ),
+                            onClick: handlePrintDoc,
+                          },
+                          { type: 'divider' },
+                          {
+                            key: 'history',
+                            label: (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '2px 0' }}>
+                                <HistoryOutlined style={{ fontSize: 15, color: '#555' }} />
+                                <span>历史记录</span>
+                              </div>
+                            ),
+                            onClick: () => { setShowHistoryModal(true); setShowMoreMenu(false); },
+                          },
+                          {
+                            key: 'comments-history',
+                            label: (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '2px 0' }}>
+                                <MessageOutlined style={{ fontSize: 15, color: '#555' }} />
+                                <span>历史评论</span>
+                              </div>
+                            ),
+                            onClick: () => { setShowDocComments(true); setShowMoreMenu(false); },
+                          },
+                          {
+                            key: 'shortcuts',
+                            label: (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '2px 0' }}>
+                                <KeyOutlined style={{ fontSize: 15, color: '#555' }} />
+                                <span>快捷键列表</span>
+                              </div>
+                            ),
+                            onClick: () => { setShowShortcutsModal(true); setShowMoreMenu(false); },
+                          },
+                          {
+                            key: 'feedback',
+                            label: (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '2px 0' }}>
+                                <FormOutlined style={{ fontSize: 15, color: '#555' }} />
+                                <span>提交反馈</span>
+                              </div>
+                            ),
+                            onClick: () => { setShowFeedbackModal(true); setShowMoreMenu(false); },
+                          },
+                          { type: 'divider' },
+                          {
+                            key: 'delete',
+                            label: (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '2px 0' }}>
+                                <DeleteOutlined style={{ fontSize: 15, color: '#ff4d4f' }} />
+                                <span style={{ color: '#ff4d4f' }}>删除</span>
+                              </div>
+                            ),
+                            onClick: handleDeleteDoc,
+                          },
+                        ],
+                      }}
+                    >
+                      <Tooltip title="更多">
+                        <Button type="text" size="small" icon={<EllipsisOutlined />}
+                          style={{ padding: '0 7px', color: showMoreMenu ? '#6366F1' : '#555', background: showMoreMenu ? '#EEF2FF' : 'transparent', borderRadius: 4 }} />
+                      </Tooltip>
+                    </Dropdown>
+                    <div style={{ width: 1, height: 14, background: '#e8e8e8', margin: '0 4px' }} />
+                    <Tooltip title={docFullScreen ? '退出全屏' : '打开全屏编辑'}>
+                      <Button type="text" size="small"
+                        icon={<span style={{ fontSize: 15, lineHeight: 1 }}>{docFullScreen ? '⊡' : '⤢'}</span>}
+                        onClick={() => setDocFullScreen(v => !v)}
+                        style={{ padding: '0 7px', color: '#555' }} />
+                    </Tooltip>
+                    <Tooltip title="关闭文档">
+                      <Button type="text" size="small" icon={<CloseOutlined />} onClick={() => { handleCloseDoc(); setDocFullScreen(false); }} style={{ padding: '0 7px', color: '#999' }} />
+                    </Tooltip>
+                  </div>
+                </div>
+
+                {/* 主体内容区（编辑 + 评论） */}
+                <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+                  {/* 文档编辑区 */}
+                  <div style={{ flex: 1, overflowY: 'auto', padding: docFullScreen ? '48px 96px' : '24px 28px', display: 'flex', flexDirection: 'column', gap: 16, position: 'relative' }}>
+                    {/* 查找和替换面板 */}
+                    {showFindReplace && (
+                      <div style={{
+                        position: 'sticky', top: 0, zIndex: 50,
+                        background: '#fff', border: '1px solid #e8e8e8',
+                        borderRadius: 10, padding: '14px 16px',
+                        boxShadow: '0 4px 16px rgba(0,0,0,0.10)',
+                        marginBottom: 8,
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>查找和替换</span>
+                          <CloseOutlined onClick={() => { setShowFindReplace(false); setFindText(''); setReplaceText(''); setFindResult(''); }} style={{ cursor: 'pointer', color: '#999', fontSize: 12 }} />
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                          <input
+                            value={findText}
+                            onChange={e => { setFindText(e.target.value); setFindResult(''); }}
+                            onKeyDown={e => { if (e.key === 'Enter') handleFindNext(); }}
+                            placeholder="查找"
+                            style={{ flex: 1, padding: '6px 10px', border: '1px solid #d9d9d9', borderRadius: 6, fontSize: 13, outline: 'none' }}
+                          />
+                          <button onClick={handleFindPrev}
+                            style={{ padding: '6px 10px', border: '1px solid #d9d9d9', borderRadius: 6, background: '#fafafa', cursor: 'pointer', fontSize: 12, color: '#555' }}>↑</button>
+                          <button onClick={handleFindNext}
+                            style={{ padding: '6px 10px', border: '1px solid #d9d9d9', borderRadius: 6, background: '#fafafa', cursor: 'pointer', fontSize: 12, color: '#555' }}>↓</button>
+                        </div>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <input
+                            value={replaceText}
+                            onChange={e => setReplaceText(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') handleReplaceAll(); }}
+                            placeholder="替换为"
+                            style={{ flex: 1, padding: '6px 10px', border: '1px solid #d9d9d9', borderRadius: 6, fontSize: 13, outline: 'none' }}
+                          />
+                          <button onClick={handleReplaceAll}
+                            style={{ padding: '6px 12px', border: 'none', borderRadius: 6, background: '#6366F1', color: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 500 }}>
+                            全部替换
+                          </button>
+                        </div>
+                        {findResult && <div style={{ marginTop: 8, fontSize: 12, color: findResult.startsWith('已替换') ? '#10B981' : '#f59e0b' }}>{findResult}</div>}
+                      </div>
+                    )}
+                    {/* 标题 */}
+                    <input
+                      value={docTitle}
+                      onChange={e => handleDocChange(e.target.value, docContent)}
+                      placeholder="文档标题"
+                      style={{ fontSize: docFullScreen ? 30 : 22, fontWeight: 700, color: '#1a1a1a', border: 'none', outline: 'none', width: '100%', background: 'transparent', padding: 0, lineHeight: 1.4 }}
+                    />
+                    <div style={{ height: 1, background: '#f0f0f0' }} />
+                    {/* 正文 contentEditable */}
+                    <div
+                      ref={docEditorRef}
+                      contentEditable
+                      suppressContentEditableWarning
+                      onInput={(e) => {
+                        const text = (e.currentTarget as HTMLDivElement).innerText;
+                        const now = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+                        setDocContent(text);
+                        setDocUpdatedAt(now);
+                        setDocHistory(prev => {
+                          const truncated = prev.slice(0, docHistoryIndex + 1);
+                          return [...truncated, { title: docTitle, content: text }];
+                        });
+                        setDocHistoryIndex(prev => prev + 1);
+                      }}
+                      onMouseUp={handleEditorMouseUp}
+                      onKeyDown={() => setSelectionToolbar({ visible: false, x: 0, y: 0 })}
+                      onClick={() => {
+                        const sel = window.getSelection();
+                        if (!sel || sel.toString().length === 0) setSelectionToolbar({ visible: false, x: 0, y: 0 });
+                      }}
+                      data-placeholder="开始编写文档内容..."
+                      style={{
+                        flex: 1, minHeight: docFullScreen ? 600 : 320,
+                        fontSize: docFullScreen ? 16 : 14, lineHeight: 1.9, color: '#333',
+                        outline: 'none', width: '100%', fontFamily: 'inherit',
+                      }}
+                    />
+                  </div>
+
+                  {/* 评论栏 */}
+                  {showDocComments && (
+                    <div style={{ width: 240, borderLeft: '1px solid #e8e8e8', display: 'flex', flexDirection: 'column', flexShrink: 0, background: '#fafafa' }}>
+                      <div style={{ padding: '12px 14px', borderBottom: '1px solid #e8e8e8', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#fff' }}>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>评论 ({docComments.length})</span>
+                        <CloseOutlined onClick={() => { setShowDocComments(false); setPendingComment(null); setCommentInput(''); }} style={{ fontSize: 12, color: '#999', cursor: 'pointer' }} />
+                      </div>
+                      <div style={{ flex: 1, overflowY: 'auto', padding: '12px 12px 0' }}>
+                        {/* 待提交的评论输入框 */}
+                        {pendingComment && (
+                          <div style={{ marginBottom: 12, border: '1px solid #e0deff', borderRadius: 10, background: '#fff', overflow: 'hidden', boxShadow: '0 2px 8px rgba(99,102,241,0.08)' }}>
+                            {pendingComment.selectedText && (
+                              <div style={{ padding: '8px 12px', borderLeft: '3px solid #F59E0B', background: '#FFFBEB', fontSize: 12, color: '#92400e', lineHeight: 1.5, borderBottom: '1px solid #f0f0f0' }}>
+                                <span style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const, overflow: 'hidden' }}>
+                                  {pendingComment.selectedText}
+                                </span>
+                              </div>
+                            )}
+                            <div style={{ padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <Avatar size={24} style={{ background: 'linear-gradient(135deg, #f472b6, #c084fc)', flexShrink: 0, fontSize: 11, fontWeight: 700 }}>A</Avatar>
+                              <span style={{ fontSize: 12, fontWeight: 600, color: '#333' }}>Alina</span>
+                            </div>
+                            <div style={{ padding: '0 12px 10px' }}>
+                              <input
+                                value={commentInput}
+                                onChange={e => setCommentInput(e.target.value)}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter' && !e.shiftKey && commentInput.trim()) {
+                                    const newComment: DocComment = {
+                                      id: `c${Date.now()}`,
+                                      selectedText: pendingComment.selectedText,
+                                      commentText: commentInput.trim(),
+                                      author: 'Alina',
+                                      avatar: 'A',
+                                      time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
+                                    };
+                                    setDocComments(prev => [...prev, newComment]);
+                                    setPendingComment(null);
+                                    setCommentInput('');
+                                  }
+                                  if (e.key === 'Escape') { setPendingComment(null); setCommentInput(''); }
+                                }}
+                                placeholder="输入评论，Enter 发送"
+                                autoFocus
+                                style={{ width: '100%', border: '1px solid #e8e8e8', borderRadius: 6, padding: '6px 10px', fontSize: 12, outline: 'none', boxSizing: 'border-box', lineHeight: 1.5 }}
+                              />
+                              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: 8 }}>
+                                <button onClick={() => { setPendingComment(null); setCommentInput(''); }}
+                                  style={{ padding: '3px 10px', border: '1px solid #e8e8e8', borderRadius: 6, background: '#fff', fontSize: 12, cursor: 'pointer', color: '#666' }}>取消</button>
+                                <button
+                                  onClick={() => {
+                                    if (!commentInput.trim()) return;
+                                    const newComment: DocComment = {
+                                      id: `c${Date.now()}`,
+                                      selectedText: pendingComment.selectedText,
+                                      commentText: commentInput.trim(),
+                                      author: 'Alina',
+                                      avatar: 'A',
+                                      time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
+                                    };
+                                    setDocComments(prev => [...prev, newComment]);
+                                    setPendingComment(null);
+                                    setCommentInput('');
+                                  }}
+                                  style={{ padding: '3px 12px', border: 'none', borderRadius: 6, background: commentInput.trim() ? '#6366F1' : '#e0e0e0', color: '#fff', fontSize: 12, cursor: commentInput.trim() ? 'pointer' : 'default', fontWeight: 500 }}>发送</button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        {/* 已有评论列表 */}
+                        {docComments.length === 0 && !pendingComment && (
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 16px', gap: 8 }}>
+                            <div style={{ fontSize: 28 }}>💬</div>
+                            <div style={{ fontSize: 13, color: '#999', textAlign: 'center' }}>暂无评论</div>
+                            <div style={{ fontSize: 12, color: '#bbb', textAlign: 'center' }}>选中文档内容后点击浮动工具栏的 💬 添加评论</div>
+                          </div>
+                        )}
+                        {docComments.map(c => (
+                          <div key={c.id} style={{ marginBottom: 12, border: '1px solid #e8e8e8', borderRadius: 10, background: '#fff', overflow: 'hidden' }}>
+                            {c.selectedText && (
+                              <div style={{ padding: '7px 12px', borderLeft: '3px solid #F59E0B', background: '#FFFBEB', fontSize: 12, color: '#92400e', lineHeight: 1.5, borderBottom: '1px solid #f0f0f0' }}>
+                                <span style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const, overflow: 'hidden' }}>{c.selectedText}</span>
+                              </div>
+                            )}
+                            <div style={{ padding: '10px 12px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                                <Avatar size={22} style={{ background: 'linear-gradient(135deg, #f472b6, #c084fc)', flexShrink: 0, fontSize: 10, fontWeight: 700 }}>{c.avatar}</Avatar>
+                                <span style={{ fontSize: 12, fontWeight: 600, color: '#333' }}>{c.author}</span>
+                                <span style={{ fontSize: 11, color: '#bbb', marginLeft: 'auto' }}>{c.time}</span>
+                              </div>
+                              <div style={{ fontSize: 12, color: '#555', lineHeight: 1.6 }}>{c.commentText}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 底部信息 */}
+                <div style={{ padding: '10px 16px', borderTop: '1px solid #f0f0f0', fontSize: 11, color: '#bbb', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+                  <span>以上内容为AI生成，请注意核实</span>
+                  <span>{docContent.length} 字</span>
+                </div>
+              </div>
+            )}
+          </div>
           ) : (
-            /* 原有的欢迎界面 */
+            /* 欢迎界面 */
             <>
-          <div style={{ textAlign: 'center', marginBottom: '60px' }}>
+          <div style={{ textAlign: 'center', marginBottom: '40px' }}>
             <h1 style={{
               fontSize: '48px',
               fontWeight: 'bold',
@@ -2967,270 +4539,42 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
               WebkitTextFillColor: 'transparent',
               marginBottom: '8px'
             }}>
-              您好，Alina
+              {greeting}，Alina
             </h1>
           </div>
 
-          <div style={{
-            width: '100%',
-            maxWidth: '800px',
-            position: 'relative'
-          }}>
-            {/* @智能体面板 */}
-            {showMentionPanel && (
-              <div style={{
-                position: 'absolute',
-                bottom: '100%',
-                left: '0',
-                right: '0',
-                marginBottom: '8px',
-                background: '#fff',
-                borderRadius: '12px',
-                boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
-                padding: '16px',
-                maxHeight: '400px',
-                overflowY: 'auto',
-                zIndex: 1000
-              }}>
-                <div>
-                  <div style={{ fontSize: '12px', color: '#999', marginBottom: '12px' }}>
-                    选择智能体（单选）
-                  </div>
-                  {allAgents.map(agent => {
-                    console.log(`智能体: ${agent.name}, isMultiAgent: ${agent.isMultiAgent}`);
-                    return (
-                    <div
-                      key={agent.id}
-                      onClick={() => handleSelectAgent(agent)}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '12px',
-                        padding: '12px',
-                        borderRadius: '8px',
-                        cursor: 'pointer',
-                        marginBottom: '4px',
-                        transition: 'background 0.3s'
-                      }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = '#f5f5f5'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                    >
-                      <div style={{
-                        width: '32px',
-                        height: '32px',
-                        background: `${agent.color}22`,
-                        borderRadius: '6px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: '16px'
-                      }}>
-                        {agent.icon}
-                      </div>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: '14px', fontWeight: 500 }}>{agent.name}</div>
-                        <div style={{ fontSize: '12px', color: '#999' }}>{agent.category}</div>
-                      </div>
-                      {agent.isMultiAgent && (
-                        <Tag color="#6366F1" style={{ margin: 0, fontSize: '12px' }}>多智能体</Tag>
-                      )}
-                    </div>
-                  )})}
-                </div>
-              </div>
-            )}
+          {/* 新建对话主区域 */}
+          <div style={{ width: '100%', maxWidth: '800px', position: 'relative' }}>
 
-            {/* Skills/Files Panel */}
-            {showSkillsPanel && (
-              <div style={{
-                position: 'absolute',
-                bottom: '100%',
-                left: '0',
-                right: '0',
-                marginBottom: '8px',
-                background: '#fff',
-                borderRadius: '12px',
-                boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
-                padding: '16px',
-                maxHeight: '500px',
-                overflowY: 'auto',
-                zIndex: 1000
-              }}>
-                {/* Search Bar */}
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  padding: '8px 12px',
-                  background: '#f5f5f5',
-                  borderRadius: '8px',
-                  marginBottom: '16px'
-                }}>
-                  <SearchOutlined style={{ color: '#999' }} />
-                  <input
-                    type="text"
-                    placeholder="搜索技能/文件"
-                    value={searchKeyword}
-                    onChange={(e) => setSearchKeyword(e.target.value)}
-                    style={{
-                      border: 'none',
-                      background: 'transparent',
-                      outline: 'none',
-                      flex: 1,
-                      fontSize: '14px'
-                    }}
-                  />
-                </div>
+            {/* 模式标题提示 */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              marginBottom: '8px'
+            }}>
+              {chatMode === 'agent' ? (
+                <>
+                  <span style={{
+                    padding: '2px 8px',
+                    border: '1.5px dashed #6366F1',
+                    borderRadius: '4px',
+                    color: '#6366F1',
+                    fontSize: '12px',
+                    fontWeight: 600
+                  }}>Beta</span>
+                  <span style={{ fontSize: '14px', color: '#555', fontWeight: 500 }}>
+                    Agent 模式：多样工具，多种技能，直接交付结果
+                  </span>
+                </>
+              ) : (
+                <span style={{ fontSize: '14px', color: '#555', fontWeight: 500 }}>
+                  对话模式：聊天问答，快速响应，轻量化交付
+                </span>
+              )}
+            </div>
 
-                {/* Tabs */}
-                <div style={{
-                  display: 'flex',
-                  gap: '8px',
-                  marginBottom: '16px',
-                  borderBottom: '1px solid #f0f0f0',
-                  paddingBottom: '8px'
-                }}>
-                  <div
-                    onClick={() => setActiveTab('all')}
-                    style={{
-                      padding: '8px 20px',
-                      borderRadius: '20px',
-                      background: activeTab === 'all' ? '#f0f0f0' : 'transparent',
-                      cursor: 'pointer',
-                      fontSize: '14px',
-                      fontWeight: activeTab === 'all' ? 500 : 400,
-                      transition: 'all 0.3s'
-                    }}
-                  >
-                    全部
-                  </div>
-                  <div
-                    onClick={() => setActiveTab('files')}
-                    style={{
-                      padding: '8px 20px',
-                      borderRadius: '20px',
-                      background: activeTab === 'files' ? '#f0f0f0' : 'transparent',
-                      cursor: 'pointer',
-                      fontSize: '14px',
-                      fontWeight: activeTab === 'files' ? 500 : 400,
-                      transition: 'all 0.3s'
-                    }}
-                  >
-                    文件
-                  </div>
-                  <div
-                    onClick={() => setActiveTab('skills')}
-                    style={{
-                      padding: '8px 20px',
-                      borderRadius: '20px',
-                      background: activeTab === 'skills' ? '#f0f0f0' : 'transparent',
-                      cursor: 'pointer',
-                      fontSize: '14px',
-                      fontWeight: activeTab === 'skills' ? 500 : 400,
-                      transition: 'all 0.3s'
-                    }}
-                  >
-                    技能
-                  </div>
-                </div>
-
-                {/* Content */}
-                <div>
-                  {(activeTab === 'all' || activeTab === 'files') && (
-                    <div style={{ marginBottom: '24px' }}>
-                      <div style={{ fontSize: '12px', color: '#999', marginBottom: '12px' }}>
-                        收藏夹文件
-                      </div>
-                      {favoriteFiles.map(file => (
-                        <div
-                          key={file.id}
-                          onClick={() => handleFileSelect(file.name)}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '12px',
-                            padding: '12px',
-                            borderRadius: '8px',
-                            cursor: 'pointer',
-                            transition: 'background 0.3s'
-                          }}
-                          onMouseEnter={(e) => e.currentTarget.style.background = '#f5f5f5'}
-                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                        >
-                          <div style={{
-                            width: '32px',
-                            height: '32px',
-                            background: '#FCD34D',
-                            borderRadius: '6px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: '16px'
-                          }}>
-                            📄
-                          </div>
-                          <span style={{ fontSize: '14px' }}>{file.name}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {(activeTab === 'all' || activeTab === 'skills') && (
-                    <div>
-                      <div style={{ fontSize: '12px', color: '#999', marginBottom: '12px' }}>
-                        我的技能
-                      </div>
-                      {mySkills.map(skill => (
-                        <div
-                          key={skill.id}
-                          onClick={() => handleSkillSelect(skill.name)}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '12px',
-                            padding: '12px',
-                            borderRadius: '8px',
-                            cursor: 'pointer',
-                            marginBottom: '8px',
-                            transition: 'background 0.3s'
-                          }}
-                          onMouseEnter={(e) => e.currentTarget.style.background = '#f5f5f5'}
-                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                        >
-                          <div style={{
-                            width: '32px',
-                            height: '32px',
-                            background: `${skill.color}22`,
-                            borderRadius: '6px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: '16px'
-                          }}>
-                            {skill.icon}
-                          </div>
-                          <span style={{ fontSize: '14px' }}>{skill.name}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Manage Tools Button */}
-                <Button
-                  block
-                  size="large"
-                  style={{
-                    marginTop: '16px',
-                    borderRadius: '8px',
-                    fontWeight: 500
-                  }}
-                >
-                  管理工具
-                </Button>
-              </div>
-            )}
-
+            {/* 输入卡片 */}
             <div style={{
               background: '#fff',
               borderRadius: '12px',
@@ -3246,7 +4590,7 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                       closable
                       onClose={() => setMentionedAgents(mentionedAgents.filter(a => a.id !== agent.id))}
                       style={{
-                        padding: '6px 12px',
+                        padding: '4px 10px',
                         borderRadius: '12px',
                         background: `${agent.color}22`,
                         border: `1px solid ${agent.color}`,
@@ -3270,7 +4614,7 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                       closable
                       onClose={() => setUploadedFiles(uploadedFiles.filter(f => f.id !== file.id))}
                       style={{
-                        padding: '6px 12px',
+                        padding: '4px 10px',
                         borderRadius: '12px',
                         background: '#FEF3C7',
                         border: '1px solid #F59E0B',
@@ -3284,126 +4628,411 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
                 </div>
               )}
 
-              <div style={{ position: 'relative' }}>
-                <MentionEditor
-                  ref={editorRef}
-                  value={inputValue}
-                  onChange={(value) => setInputValue(value)}
-                  placeholder="给我发消息或布置任务（输入 @ 提及智能体）"
-                  agents={allAgents}
-                  groups={[]}
-                  onSelectAgent={(agent) => {
-                    // 单选模式，直接设置选中的智能体
-                    const agentData = allAgents.find(a => a.id === agent.id);
-                    if (agentData) {
-                      setMentionedAgents([agentData]);
-                    }
-                  }}
-                  minRows={4}
-                  maxRows={8}
-                  style={{
-                    fontSize: '16px',
-                    border: 'none',
-                    width: '100%'
-                  }}
-                />
-              </div>
+              {/* 场景引用标签 */}
+              {selectedScene && (
+                <div style={{ marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '4px 12px',
+                    borderRadius: '20px',
+                    background: '#EEF2FF',
+                    border: '1px solid #6366F1',
+                    fontSize: '13px',
+                    color: '#6366F1',
+                    fontWeight: 500
+                  }}>
+                    <span>{selectedScene.icon}</span>
+                    <span>{selectedScene.name}</span>
+                    <span
+                      onClick={() => setSelectedScene(null)}
+                      style={{ cursor: 'pointer', marginLeft: '2px', fontSize: '14px', lineHeight: 1, opacity: 0.6 }}
+                      onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+                      onMouseLeave={(e) => e.currentTarget.style.opacity = '0.6'}
+                    >×</span>
+                  </div>
+                </div>
+              )}
 
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginTop: '12px',
-              paddingTop: '12px',
-              borderTop: '1px solid #f0f0f0'
-            }}>
-              <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-                {/* @ 提及按钮 */}
-                <Button
-                  type="default"
-                  icon={<span style={{ fontSize: '16px', fontWeight: 'bold' }}>@</span>}
-                  style={{ borderRadius: '6px' }}
-                  onClick={(e) => {
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    editorRef.current?.openMentionPanel(rect);
-                  }}
-                />
+              {/* 文本输入区 */}
+              <MentionEditor
+                ref={editorRef}
+                value={inputValue}
+                onChange={(value) => setInputValue(value)}
+                placeholder="有什么我能帮您的？"
+                agents={allAgents}
+                groups={[]}
+                onSelectAgent={(agent) => {
+                  const agentData = allAgents.find(a => a.id === agent.id);
+                  if (agentData) setMentionedAgents([agentData]);
+                }}
+                minRows={4}
+                maxRows={8}
+                style={{ fontSize: '15px', border: 'none', width: '100%' }}
+              />
 
-                {/* 上传文件按钮 - 只显示别针图标 */}
-                <label htmlFor="file-upload">
+              {/* 底部工具栏 */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginTop: '12px',
+                paddingTop: '12px',
+                // borderTop: '1px solid #f0f0f0'
+              }}>
+                {/* 左侧工具 */}
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  {/* 上传文件（两种模式都支持） */}
                   <Button
-                    type="default"
-                    icon={<PaperClipOutlined />}
-                    style={{ borderRadius: '6px' }}
-                    onClick={() => document.getElementById('file-upload')?.click()}
+                    type="text"
+                    icon={<PaperClipOutlined style={{ fontSize: '18px', color: '#555' }} />}
+                    style={{ borderRadius: '6px', padding: '4px 8px' }}
+                    title="上传文件"
+                    onClick={() => document.getElementById('welcome-file-upload')?.click()}
                   />
-                </label>
-                <input
-                  id="file-upload"
-                  type="file"
-                  multiple
-                  style={{ display: 'none' }}
-                  onChange={handleFileUpload}
-                />
+                  <input
+                    id="welcome-file-upload"
+                    type="file"
+                    multiple
+                    style={{ display: 'none' }}
+                    onChange={handleFileUpload}
+                  />
 
-                {/* 深度思考按钮 - 未选中时只显示图标 */}
-                <Button
-                  type={deepThinking ? 'primary' : 'default'}
-                  icon={<BulbOutlined />}
-                  style={{
-                    borderRadius: '6px',
-                    background: deepThinking ? 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)' : undefined,
-                    border: deepThinking ? 'none' : undefined
-                  }}
-                  onClick={() => setDeepThinking(!deepThinking)}
-                >
-                  {deepThinking ? '深度思考' : ''}
-                </Button>
+                  {/* Chat 模式专属工具 */}
+                  {chatMode === 'chat' && (
+                    <>
+                      {/* 联网搜索 - hover显示搜索选项弹窗 */}
+                      <Popover
+                        open={showSearchPopover}
+                        onOpenChange={(v) => setShowSearchPopover(v)}
+                        trigger="hover"
+                        placement="top"
+                        overlayInnerStyle={{
+                          background: '#1a1a1a',
+                          borderRadius: '10px',
+                          padding: '0',
+                          minWidth: '200px'
+                        }}
+                        overlayStyle={{ '--antd-arrow-background-color': '#1a1a1a' } as React.CSSProperties}
+                        content={
+                          <div style={{ color: '#fff' }}>
+                            {/* 搜索 - 单轮 */}
+                            <div
+                              onClick={() => {
+                                setWebSearch(true);
+                                setSearchMode('normal');
+                                setShowSearchPopover(false);
+                              }}
+                              style={{
+                                padding: '12px 16px',
+                                cursor: 'pointer',
+                                borderBottom: '1px solid rgba(255,255,255,0.1)'
+                              }}
+                            >
+                              <div style={{ fontWeight: 600, fontSize: '14px', marginBottom: '2px' }}>搜索</div>
+                              <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.55)' }}>单轮搜索，快速获取信息</div>
+                            </div>
+                            {/* 高级搜索 - 多轮 + 开关 */}
+                            <div style={{ padding: '12px 16px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2px' }}>
+                                <span style={{ fontWeight: 600, fontSize: '14px' }}>高级搜索</span>
+                                <Switch
+                                  size="small"
+                                  checked={searchMode === 'advanced'}
+                                  onChange={(checked) => {
+                                    setWebSearch(true);
+                                    setSearchMode(checked ? 'advanced' : 'normal');
+                                    if (checked) setDeepThinking(true);
+                                    setShowSearchPopover(false);
+                                  }}
+                                  style={{ background: searchMode === 'advanced' ? '#6366F1' : undefined }}
+                                />
+                              </div>
+                              <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.55)' }}>多轮搜索，深入研究分析</div>
+                            </div>
+                          </div>
+                        }
+                      >
+                        <Button
+                          type="text"
+                          icon={<span style={{ fontSize: '18px' }}>🌐</span>}
+                          style={{
+                            borderRadius: '6px',
+                            padding: '4px 8px',
+                            color: webSearch ? '#6366F1' : '#555',
+                            background: webSearch ? '#EEF2FF' : 'transparent',
+                            outline: webSearch ? '2px solid #6366F1' : 'none',
+                            outlineOffset: '-1px'
+                          }}
+                          onClick={() => {
+                            if (webSearch) {
+                              setWebSearch(false);
+                              setSearchMode(null);
+                            } else {
+                              setWebSearch(true);
+                              if (!searchMode) setSearchMode('normal');
+                            }
+                          }}
+                        />
+                      </Popover>
 
-                {/* 知识库按钮 */}
-                <Button
-                  type="default"
-                  icon={<DatabaseOutlined />}
-                  style={{ borderRadius: '6px' }}
-                >
-                  知识库
-                </Button>
-              </div>
+                      {/* 深度思考 */}
+                      <Button
+                        type="text"
+                        icon={<BulbOutlined style={{ fontSize: '18px', color: deepThinking ? '#6366F1' : '#555' }} />}
+                        title={deepThinking ? '关闭深度思考' : '开启深度思考'}
+                        style={{
+                          borderRadius: '6px',
+                          padding: '4px 8px',
+                          background: deepThinking ? '#EEF2FF' : 'transparent'
+                        }}
+                        onClick={() => setDeepThinking(!deepThinking)}
+                      />
+                    </>
+                  )}
+                </div>
 
-              <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                <Dropdown menu={{ items: modelMenuItems }} trigger={['click']}>
+                {/* 右侧：模式切换 + 发送 */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  {/* Agent / Chat 模式切换 */}
                   <div style={{
                     display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    padding: '4px 12px',
-                    cursor: 'pointer',
-                    borderRadius: '6px',
-                    background: '#f5f5f5'
+                    background: '#f0f0f0',
+                    borderRadius: '8px',
+                    padding: '2px'
                   }}>
-                    <SmileOutlined />
-                    <span style={{ fontSize: '14px' }}>GLM-4-Flash-250414</span>
-                    <span style={{ fontSize: '12px', color: '#999' }}>语言</span>
-                    <span>▼</span>
+                    <div
+                      onClick={() => setChatMode('agent')}
+                      style={{
+                        padding: '4px 14px',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        fontSize: '13px',
+                        fontWeight: chatMode === 'agent' ? 600 : 400,
+                        background: chatMode === 'agent' ? '#fff' : 'transparent',
+                        color: chatMode === 'agent' ? '#1a1a1a' : '#888',
+                        boxShadow: chatMode === 'agent' ? '0 1px 3px rgba(0,0,0,0.12)' : 'none',
+                        transition: 'all 0.2s',
+                        userSelect: 'none' as const
+                      }}
+                    >
+                      Agent
+                    </div>
+                    <div
+                      onClick={() => setChatMode('chat')}
+                      style={{
+                        padding: '4px 14px',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        fontSize: '13px',
+                        fontWeight: chatMode === 'chat' ? 600 : 400,
+                        background: chatMode === 'chat' ? '#fff' : 'transparent',
+                        color: chatMode === 'chat' ? '#1a1a1a' : '#888',
+                        boxShadow: chatMode === 'chat' ? '0 1px 3px rgba(0,0,0,0.12)' : 'none',
+                        transition: 'all 0.2s',
+                        userSelect: 'none' as const
+                      }}
+                    >
+                      Chat
+                    </div>
                   </div>
-                </Dropdown>
 
-                <Button
-                  type="primary"
-                  icon={<SendOutlined />}
-                  style={{
-                    background: 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)',
-                    border: 'none',
-                    borderRadius: '6px',
-                    width: '40px',
-                    height: '40px'
-                  }}
-                  disabled={!inputValue.trim()}
-                  onClick={handleCreateConversation}
-                />
+                  {/* 发送按钮 */}
+                  <Button
+                    type="primary"
+                    icon={<SendOutlined />}
+                    style={{
+                      background: inputValue.trim()
+                        ? 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)'
+                        : '#e0e0e0',
+                      border: 'none',
+                      borderRadius: '8px',
+                      width: '40px',
+                      height: '40px'
+                    }}
+                    disabled={!inputValue.trim()}
+                    onClick={handleCreateConversation}
+                  />
+                </div>
               </div>
             </div>
-          </div>
+
+            {/* 场景预设区 */}
+            {chatMode === 'agent' ? (
+              <div style={{ marginTop: '28px' }}>
+                {/* Agent 场景分类 tab */}
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
+                  {['深度写作', 'AI幻灯片', '数据分析', '全栈开发'].map(cat => (
+                    <div
+                      key={cat}
+                      onClick={() => { setAgentSceneCategory(cat); setSelectedScene(null); }}
+                      style={{
+                        padding: '6px 18px',
+                        borderRadius: '20px',
+                        border: `1px solid ${agentSceneCategory === cat ? '#6366F1' : '#e0e0e0'}`,
+                        background: agentSceneCategory === cat ? '#EEF2FF' : '#fff',
+                        color: agentSceneCategory === cat ? '#6366F1' : '#555',
+                        fontSize: '13px',
+                        fontWeight: agentSceneCategory === cat ? 600 : 400,
+                        cursor: 'pointer',
+                        transition: 'all 0.2s',
+                        userSelect: 'none' as const
+                      }}
+                    >
+                      {cat}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Agent 场景卡片 */}
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                  {(agentSceneCategory === '深度写作' ? [
+                    { icon: '📝', name: '研究报告', desc: '基于多方资料，深度调研并生成专业研究报告' },
+                    { icon: '✍️', name: '长文写作', desc: '撰写高质量的长篇文章与深度内容分析' },
+                    { icon: '📣', name: '营销文案', desc: '创作有吸引力的营销文案与品牌内容' },
+                    { icon: '🔍', name: '内容优化', desc: '优化现有文案表达，提升内容逻辑与说服力' },
+                  ] : agentSceneCategory === 'AI幻灯片' ? [
+                    { icon: '🎞️', name: '一键生成PPT', desc: '描述主题，自动生成完整演示文稿' },
+                    { icon: '🎨', name: '风格定制', desc: '按品牌色彩与风格定制幻灯片主题' },
+                    { icon: '📈', name: '数据图表', desc: '将数据自动转化为可视化图表页面' },
+                    { icon: '🎤', name: '演讲稿生成', desc: '生成配套演讲稿与每页讲解要点' },
+                  ] : agentSceneCategory === '数据分析' ? [
+                    { icon: '📊', name: '数据洞察', desc: '上传数据，自动发现关键趋势与规律' },
+                    { icon: '📉', name: '销售分析', desc: '分析销售趋势，识别增长机会与风险' },
+                    { icon: '🧩', name: '用户行为', desc: '挖掘用户路径与转化漏斗关键节点' },
+                    { icon: '🌍', name: '竞品对比', desc: '多维度竞品数据比对与市场分析' },
+                  ] : [
+                    { icon: '💻', name: '代码生成', desc: '自然语言描述需求，生成完整可运行代码' },
+                    { icon: '🐛', name: '智能调试', desc: '自动定位并修复代码Bug与性能问题' },
+                    { icon: '🏗️', name: '架构设计', desc: '生成系统架构图与详细技术方案' },
+                    { icon: '🧪', name: '单测生成', desc: '自动生成完整的单元测试用例' },
+                  ]).map(scene => (
+                    <div
+                      key={scene.name}
+                      onClick={() => {
+                        setSelectedScene(scene);
+                        editorRef.current?.focus();
+                      }}
+                      style={{
+                        flex: '1 1 160px',
+                        maxWidth: '200px',
+                        padding: '14px 16px',
+                        background: selectedScene?.name === scene.name ? '#EEF2FF' : '#fff',
+                        borderRadius: '10px',
+                        border: `1px solid ${selectedScene?.name === scene.name ? '#6366F1' : '#e8e8e8'}`,
+                        cursor: 'pointer',
+                        transition: 'all 0.2s',
+                        boxShadow: selectedScene?.name === scene.name ? '0 2px 8px rgba(99,102,241,0.15)' : '0 1px 4px rgba(0,0,0,0.04)'
+                      }}
+                      onMouseEnter={(e) => {
+                        if (selectedScene?.name !== scene.name) {
+                          e.currentTarget.style.borderColor = '#6366F1';
+                          e.currentTarget.style.boxShadow = '0 2px 8px rgba(99,102,241,0.12)';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (selectedScene?.name !== scene.name) {
+                          e.currentTarget.style.borderColor = '#e8e8e8';
+                          e.currentTarget.style.boxShadow = '0 1px 4px rgba(0,0,0,0.04)';
+                        }
+                      }}
+                    >
+                      <div style={{ fontSize: '22px', marginBottom: '6px' }}>{scene.icon}</div>
+                      <div style={{ fontSize: '13px', fontWeight: 600, color: '#1a1a1a', marginBottom: '4px' }}>{scene.name}</div>
+                      <div style={{ fontSize: '12px', color: '#888', lineHeight: 1.4 }}>{scene.desc}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div style={{ marginTop: '28px' }}>
+                {/* Chat 场景分类 tab */}
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
+                  {['知识问答', '智能写作', '文档处理', '语言翻译', '创意灵感'].map(cat => (
+                    <div
+                      key={cat}
+                      onClick={() => setChatSceneCategory(cat)}
+                      style={{
+                        padding: '6px 18px',
+                        borderRadius: '20px',
+                        border: `1px solid ${chatSceneCategory === cat ? '#6366F1' : '#e0e0e0'}`,
+                        background: chatSceneCategory === cat ? '#EEF2FF' : '#fff',
+                        color: chatSceneCategory === cat ? '#6366F1' : '#555',
+                        fontSize: '13px',
+                        fontWeight: chatSceneCategory === cat ? 600 : 400,
+                        cursor: 'pointer',
+                        transition: 'all 0.2s',
+                        userSelect: 'none' as const
+                      }}
+                    >
+                      {cat}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Chat 场景卡片 */}
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                  {(chatSceneCategory === '知识问答' ? [
+                    { icon: '📚', name: '知识库问答', desc: '从知识库中精准检索，回答专业问题' },
+                    { icon: '🔬', name: '学术研究助手', desc: '辅助文献调研与学术写作' },
+                    { icon: '💡', name: '百科解答', desc: '快速解答各类知识性问题' },
+                    { icon: '🏭', name: '行业专家咨询', desc: '行业知识问答与专家建议' },
+                  ] : chatSceneCategory === '智能写作' ? [
+                    { icon: '✍️', name: '营销文案', desc: '生成吸引眼球的广告与营销文案' },
+                    { icon: '📰', name: '新闻稿撰写', desc: '快速生成专业新闻稿件' },
+                    { icon: '📧', name: '商务邮件', desc: '一键生成正式商务邮件' },
+                    { icon: '📝', name: '文章润色', desc: '优化文章逻辑与表达' },
+                  ] : chatSceneCategory === '文档处理' ? [
+                    { icon: '📄', name: '文档摘要', desc: '快速提取文档核心要点' },
+                    { icon: '🔍', name: '智能提取', desc: '从文档中提取结构化信息' },
+                    { icon: '📋', name: '合同审阅', desc: '自动审阅合同条款与风险' },
+                    { icon: '🗂️', name: '报告生成', desc: '基于文档内容生成分析报告' },
+                  ] : chatSceneCategory === '语言翻译' ? [
+                    { icon: '🌏', name: '中英互译', desc: '专业准确的中英文互译' },
+                    { icon: '🇯🇵', name: '日韩翻译', desc: '日语、韩语精准翻译' },
+                    { icon: '📖', name: '文学翻译', desc: '保留原文风格的文学翻译' },
+                    { icon: '🔤', name: '术语翻译', desc: '专业术语精准对照翻译' },
+                  ] : [
+                    { icon: '🎨', name: '创意写作', desc: '激发创意，生成有趣故事与脚本' },
+                    { icon: '💭', name: '头脑风暴', desc: '帮你快速产生大量创意想法' },
+                    { icon: '🎭', name: '角色扮演', desc: '沉浸式情景对话体验' },
+                    { icon: '🌈', name: '灵感画板', desc: '视觉化呈现创意与概念' },
+                  ]).map(scene => (
+                    <div
+                      key={scene.name}
+                      onClick={() => {
+                        setInputValue(scene.desc);
+                        editorRef.current?.focus();
+                      }}
+                      style={{
+                        flex: '1 1 160px',
+                        maxWidth: '200px',
+                        padding: '14px 16px',
+                        background: '#fff',
+                        borderRadius: '10px',
+                        border: '1px solid #e8e8e8',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s',
+                        boxShadow: '0 1px 4px rgba(0,0,0,0.04)'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = '#6366F1';
+                        e.currentTarget.style.boxShadow = '0 2px 8px rgba(99,102,241,0.12)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = '#e8e8e8';
+                        e.currentTarget.style.boxShadow = '0 1px 4px rgba(0,0,0,0.04)';
+                      }}
+                    >
+                      <div style={{ fontSize: '22px', marginBottom: '6px' }}>{scene.icon}</div>
+                      <div style={{ fontSize: '13px', fontWeight: 600, color: '#1a1a1a', marginBottom: '4px' }}>{scene.name}</div>
+                      <div style={{ fontSize: '12px', color: '#888', lineHeight: 1.4 }}>{scene.desc}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           <div style={{
@@ -3878,7 +5507,300 @@ const Frontend: React.FC<FrontendProps> = ({ onBackToAdmin, selectedSkill }) => 
           </Button>
         </div>
       </Modal>
+
+
     </Layout>
+
+
+      {/* 分享图片预览弹窗 */}
+      {showShareImagePreview && shareImageDataUrl && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div onClick={() => setShowShareImagePreview(false)} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)' }} />
+          <div style={{
+            position: 'relative', background: '#fff', borderRadius: 16,
+            width: 560, maxWidth: '92vw',
+            maxHeight: '88vh',
+            display: 'flex', flexDirection: 'column',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
+            overflow: 'hidden',
+          }}>
+            {/* 标题栏 */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #f0f0f0', flexShrink: 0 }}>
+              <span style={{ fontSize: 16, fontWeight: 600, color: '#1a1a1a' }}>分享图片预览</span>
+              <button
+                onClick={() => setShowShareImagePreview(false)}
+                style={{ background: 'none', border: 'none', fontSize: 20, color: '#999', cursor: 'pointer', lineHeight: 1, padding: '2px 6px' }}
+              >×</button>
+            </div>
+            {/* 图片内容 */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
+              <img
+                src={shareImageDataUrl}
+                alt="分享预览"
+                style={{ width: '100%', borderRadius: 10, border: '1px solid #f0f0f0', display: 'block' }}
+              />
+            </div>
+            {/* 底部按钮 */}
+            <div style={{ padding: '14px 20px', borderTop: '1px solid #f0f0f0', display: 'flex', gap: 10, flexShrink: 0 }}>
+              <Button
+                style={{ flex: 1, borderRadius: 10, height: 44, fontWeight: 500, fontSize: 14 }}
+                icon={<CopyOutlined />}
+                onClick={async () => {
+                  try {
+                    const res = await fetch(shareImageDataUrl);
+                    const blob = await res.blob();
+                    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+                    message.success('图片已复制到剪贴板');
+                  } catch {
+                    message.warning('复制失败，请手动保存图片');
+                  }
+                }}
+              >
+                复制图片
+              </Button>
+              <Button
+                type="primary"
+                style={{ flex: 1, borderRadius: 10, height: 44, fontWeight: 600, fontSize: 14, background: '#1677ff', borderColor: '#1677ff' }}
+                icon={<DownloadOutlined />}
+                onClick={() => {
+                  const a = document.createElement('a');
+                  a.href = shareImageDataUrl;
+                  a.download = `对话分享_${Date.now()}.png`;
+                  a.click();
+                  message.success('图片已下载');
+                }}
+              >
+                下载图片
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* 全局选中文字浮动工具栏 */}
+      {selectionToolbar.visible && (
+        <div
+          style={{
+            position: 'fixed',
+            left: selectionToolbar.x,
+            top: selectionToolbar.y,
+            transform: 'translateX(-50%)',
+            background: '#1a1a1a',
+            borderRadius: 8,
+            padding: '5px 8px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 2,
+            zIndex: 10000,
+            boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
+            whiteSpace: 'nowrap',
+            userSelect: 'none',
+          }}
+          onMouseDown={e => e.preventDefault()}
+        >
+          {/* AI改写 */}
+          <button
+            onClick={() => { message.info('AI改写功能开发中'); setSelectionToolbar({visible:false,x:0,y:0}); }}
+            style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px', background: 'transparent', border: 'none', color: '#a78bfa', cursor: 'pointer', fontSize: 12, fontWeight: 600, borderRadius: 4 }}
+          >
+            ✦ AI改写
+          </button>
+          <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.15)', margin: '0 2px' }} />
+          {/* T 文字样式 */}
+          <Tooltip title="标题"><button onClick={() => applyFormat('formatBlock', 'h2')} style={{ padding: '3px 6px', background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 700, borderRadius: 4 }}>T</button></Tooltip>
+          {/* 对齐 */}
+          <Tooltip title="居中对齐"><button onClick={() => applyFormat('justifyCenter')} style={{ padding: '3px 6px', background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 14, borderRadius: 4 }}>≡</button></Tooltip>
+          <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.15)', margin: '0 2px' }} />
+          {/* B 加粗 */}
+          <Tooltip title="加粗"><button onClick={() => applyFormat('bold')} style={{ padding: '3px 6px', background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 700, borderRadius: 4 }}>B</button></Tooltip>
+          {/* S 删除线 */}
+          <Tooltip title="删除线"><button onClick={() => applyFormat('strikeThrough')} style={{ padding: '3px 6px', background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 13, borderRadius: 4, textDecoration: 'line-through' }}>S</button></Tooltip>
+          {/* I 斜体 */}
+          <Tooltip title="斜体"><button onClick={() => applyFormat('italic')} style={{ padding: '3px 6px', background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 13, fontStyle: 'italic', borderRadius: 4 }}>I</button></Tooltip>
+          {/* U 下划线 */}
+          <Tooltip title="下划线"><button onClick={() => applyFormat('underline')} style={{ padding: '3px 6px', background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 13, textDecoration: 'underline', borderRadius: 4 }}>U</button></Tooltip>
+          {/* 链接 */}
+          <Tooltip title="插入链接"><button onClick={() => { const url = prompt('输入链接 URL：'); if (url) applyFormat('createLink', url); }} style={{ padding: '3px 6px', background: 'transparent', border: 'none', color: '#60a5fa', cursor: 'pointer', fontSize: 13, borderRadius: 4 }}>🔗</button></Tooltip>
+          {/* 代码 */}
+          <Tooltip title="行内代码"><button onClick={() => applyFormat('formatBlock', 'pre')} style={{ padding: '3px 6px', background: 'transparent', border: 'none', color: '#34d399', cursor: 'pointer', fontSize: 11, fontFamily: 'monospace', borderRadius: 4 }}>{`</>`}</button></Tooltip>
+          {/* A 文字颜色 */}
+          <Tooltip title="高亮"><button onClick={() => applyFormat('backColor', '#FDE68A')} style={{ padding: '3px 6px', background: 'transparent', border: 'none', color: '#FBBF24', cursor: 'pointer', fontSize: 13, fontWeight: 700, borderRadius: 4 }}>A</button></Tooltip>
+          <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.15)', margin: '0 2px' }} />
+          {/* 复制 */}
+          <Tooltip title="复制">
+            <button
+              onClick={() => {
+                const sel = window.getSelection();
+                if (sel) navigator.clipboard.writeText(sel.toString()).then(() => message.success('已复制'));
+                setSelectionToolbar({visible:false,x:0,y:0});
+              }}
+              style={{ padding: '3px 7px', background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 12, borderRadius: 4 }}
+            >
+              复制
+            </button>
+          </Tooltip>
+          {/* 评论 */}
+          <Tooltip title="添加评论">
+            <button
+              onClick={() => {
+                const sel = window.getSelection();
+                const selectedText = sel ? sel.toString().trim() : '';
+                if (selectedText) {
+                  document.execCommand('backColor', false, '#FEF3C7');
+                }
+                setPendingComment({ selectedText });
+                setShowDocComments(true);
+                setSelectionToolbar({visible:false,x:0,y:0});
+                setCommentInput('');
+              }}
+              style={{ padding: '3px 6px', background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 13, borderRadius: 4 }}
+            >
+              💬
+            </button>
+          </Tooltip>
+        </div>
+      )}
+
+      {/* 历史记录 Modal */}
+      <Modal
+        title={<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><HistoryOutlined style={{ color: '#6366F1' }} /><span>历史记录</span></div>}
+        open={showHistoryModal}
+        onCancel={() => setShowHistoryModal(false)}
+        footer={null}
+        width={480}
+      >
+        <div style={{ maxHeight: 400, overflowY: 'auto' }}>
+          {docHistory.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '40px 0', color: '#999' }}>暂无历史记录</div>
+          ) : (
+            [...docHistory].reverse().map((item, i) => {
+              const idx = docHistory.length - 1 - i;
+              const isCurrent = idx === docHistoryIndex;
+              return (
+                <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderBottom: '1px solid #f0f0f0', borderRadius: isCurrent ? 8 : 0, background: isCurrent ? '#F0F9FF' : 'transparent' }}>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: isCurrent ? 600 : 400, color: '#1a1a1a' }}>{item.title || '未命名文档'}</div>
+                    <div style={{ fontSize: 12, color: '#999', marginTop: 2 }}>版本 {idx + 1} · {item.content.length} 字{isCurrent ? ' · 当前版本' : ''}</div>
+                  </div>
+                  {isCurrent ? (
+                    <span style={{ fontSize: 12, color: '#6366F1', background: '#EEF2FF', padding: '2px 8px', borderRadius: 10, fontWeight: 500 }}>当前</span>
+                  ) : (
+                    <Button size="small" onClick={() => {
+                      setDocHistoryIndex(idx);
+                      setDocTitle(item.title);
+                      setDocContent(item.content);
+                      setShowHistoryModal(false);
+                      message.success('已恢复到该版本');
+                    }} style={{ borderRadius: 6, fontSize: 12 }}>
+                      恢复
+                    </Button>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      </Modal>
+
+      {/* 快捷键列表 Modal */}
+      <Modal
+        title={<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><KeyOutlined style={{ color: '#6366F1' }} /><span>快捷键列表</span></div>}
+        open={showShortcutsModal}
+        onCancel={() => setShowShortcutsModal(false)}
+        footer={null}
+        width={460}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          {[
+            { group: '文字格式', shortcuts: [
+              { keys: ['Ctrl', 'B'], desc: '加粗' },
+              { keys: ['Ctrl', 'I'], desc: '斜体' },
+              { keys: ['Ctrl', 'U'], desc: '下划线' },
+              { keys: ['Alt', 'Shift', 'S'], desc: '删除线' },
+            ]},
+            { group: '编辑操作', shortcuts: [
+              { keys: ['Ctrl', 'Z'], desc: '撤销' },
+              { keys: ['Ctrl', 'Y'], desc: '重做' },
+              { keys: ['Ctrl', 'A'], desc: '全选' },
+              { keys: ['Ctrl', 'C'], desc: '复制' },
+              { keys: ['Ctrl', 'X'], desc: '剪切' },
+              { keys: ['Ctrl', 'V'], desc: '粘贴' },
+            ]},
+            { group: '文档操作', shortcuts: [
+              { keys: ['Ctrl', 'F'], desc: '查找和替换' },
+              { keys: ['Ctrl', 'P'], desc: '打印' },
+              { keys: ['Ctrl', 'S'], desc: '保存' },
+            ]},
+          ].map(group => (
+            <div key={group.group} style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#999', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>{group.group}</div>
+              {group.shortcuts.map(s => (
+                <div key={s.desc} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #f5f5f5' }}>
+                  <span style={{ fontSize: 14, color: '#333' }}>{s.desc}</span>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    {s.keys.map((k, ki) => (
+                      <span key={k}>
+                        <kbd style={{ padding: '2px 8px', background: '#f5f5f5', borderRadius: 5, fontSize: 12, color: '#555', border: '1px solid #e0e0e0', fontFamily: 'inherit', boxShadow: '0 1px 0 #ccc' }}>{k}</kbd>
+                        {ki < s.keys.length - 1 && <span style={{ margin: '0 2px', color: '#bbb', fontSize: 11 }}>+</span>}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      </Modal>
+
+      {/* 提交反馈 Modal */}
+      <Modal
+        title={<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><FormOutlined style={{ color: '#6366F1' }} /><span>提交反馈</span></div>}
+        open={showFeedbackModal}
+        onCancel={() => { setShowFeedbackModal(false); setFeedbackText(''); setFeedbackRating(null); }}
+        onOk={() => {
+          if (!feedbackText.trim()) { message.warning('请填写反馈内容'); return; }
+          message.success('感谢您的反馈，我们会持续改进！');
+          setShowFeedbackModal(false);
+          setFeedbackText('');
+          setFeedbackRating(null);
+        }}
+        okText="提交"
+        cancelText="取消"
+        okButtonProps={{ style: { background: '#6366F1', borderColor: '#6366F1' } }}
+        width={460}
+      >
+        <div style={{ padding: '8px 0' }}>
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 13, color: '#666', marginBottom: 10 }}>您对文档编辑体验的评价</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {['😞', '😐', '🙂', '😊', '🤩'].map((emoji, i) => (
+                <button key={i} onClick={() => setFeedbackRating(i + 1)}
+                  style={{ width: 44, height: 44, borderRadius: 8, border: feedbackRating === i + 1 ? '2px solid #6366F1' : '1px solid #e8e8e8', background: feedbackRating === i + 1 ? '#EEF2FF' : '#fafafa', fontSize: 22, cursor: 'pointer', transition: 'all 0.15s' }}>
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div style={{ marginBottom: 4, fontSize: 13, color: '#666' }}>问题描述或建议</div>
+          <textarea
+            value={feedbackText}
+            onChange={e => setFeedbackText(e.target.value)}
+            placeholder="请描述您遇到的问题或改进建议..."
+            style={{ width: '100%', height: 100, padding: '10px 12px', border: '1px solid #d9d9d9', borderRadius: 8, fontSize: 13, resize: 'none', outline: 'none', fontFamily: 'inherit', lineHeight: 1.6, boxSizing: 'border-box' }}
+          />
+          <div style={{ fontSize: 12, color: '#bbb', textAlign: 'right', marginTop: 4 }}>{feedbackText.length}/500</div>
+        </div>
+      </Modal>
+
+      {/* 数字员工评分 Modal */}
+      {activeDeEmployee && (
+        <SessionRatingModal
+          open={ratingOpen}
+          employee={activeDeEmployee}
+          sessionId={ratingSessionId}
+          onClose={() => setRatingOpen(false)}
+        />
+      )}
+    </>
   );
 };
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Layout, Menu, Avatar, Badge, Breadcrumb } from 'antd';
+import { Layout, Menu, Badge, Breadcrumb } from 'antd';
 import {
   HomeOutlined,
   ToolOutlined,
@@ -13,14 +13,14 @@ import {
   BarChartOutlined,
   SettingOutlined,
   BellOutlined,
-  UserOutlined,
   CloudServerOutlined,
-  BranchesOutlined,
   OrderedListOutlined,
   FolderOpenOutlined,
   SafetyCertificateOutlined,
   SmileOutlined,
   TeamOutlined as TeamIconOutlined,
+  AimOutlined,
+  DashboardOutlined,
 } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
 
@@ -38,16 +38,6 @@ const items: MenuItem[] = [
     key: 'digital-avatar',
     icon: <SmileOutlined />,
     label: '数字分身',
-  },
-  {
-    key: 'digital-employee',
-    icon: <TeamIconOutlined />,
-    label: '数字员工',
-  },
-  {
-    key: 'openclaw',
-    icon: <BranchesOutlined />,
-    label: 'OpenClaw',
   },
   {
     key: 'agent',
@@ -119,6 +109,11 @@ const items: MenuItem[] = [
     ],
   },
   {
+    key: 'trace',
+    icon: <AimOutlined />,
+    label: 'Trace',
+  },
+  {
     key: 'system',
     icon: <SettingOutlined />,
     label: '系统管理',
@@ -131,14 +126,16 @@ interface MainLayoutProps {
   onMenuClick?: (key: string) => void;
   onFrontendClick?: () => void;
   onOpenClawClick?: () => void;
+  profileTab?: { open: boolean; onClose: () => void };
 }
 
-const MainLayout: React.FC<MainLayoutProps> = ({ children, currentPage = 'home', onMenuClick, onFrontendClick, onOpenClawClick }) => {
+const MainLayout: React.FC<MainLayoutProps> = ({ children, currentPage = 'home', onMenuClick, onFrontendClick, onOpenClawClick, profileTab }) => {
   const [selectedKey, setSelectedKey] = useState(currentPage);
 
   const getDefaultOpenKeys = (page: string): string[] => {
     if (['skill', 'workflow', 'mcp', 'api', 'components'].includes(page)) return ['tools'];
     if (['evaluation-tasks', 'evaluation-data', 'evaluation-rules'].includes(page)) return ['evaluation'];
+    if (['digital-employee-workbench', 'digital-employee-library', 'digital-employee-domain'].includes(page)) return ['digital-employee'];
     return [];
   };
 
@@ -146,6 +143,11 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children, currentPage = 'home',
 
   const handleMenuClick: MenuProps['onClick'] = (e) => {
     setSelectedKey(e.key);
+    if (e.key === 'digital-employee') {
+      // 点击父菜单直接跳转到工作台
+      if (onMenuClick) onMenuClick('digital-employee-workbench');
+      return;
+    }
     if (onMenuClick) {
       onMenuClick(e.key);
     }
@@ -209,12 +211,57 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children, currentPage = 'home',
           alignItems: 'center',
           justifyContent: 'space-between'
         }}>
-          <Breadcrumb
-            items={[
-              { title: '首页' },
-            ]}
-          />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <Breadcrumb
+              items={[
+                { title: '首页' },
+              ]}
+            />
+            {profileTab?.open && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <span style={{ color: '#999', fontSize: '13px' }}>/</span>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '3px 10px',
+                  background: '#EEF2FF',
+                  borderRadius: '6px',
+                  fontSize: '13px',
+                  color: '#6366F1',
+                  fontWeight: 500
+                }}>
+                  <span>个人中心</span>
+                  <span
+                    onClick={profileTab.onClose}
+                    style={{ cursor: 'pointer', fontSize: '12px', color: '#6366F1', lineHeight: 1, opacity: 0.7 }}
+                    onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
+                    onMouseLeave={(e) => (e.currentTarget.style.opacity = '0.7')}
+                  >×</span>
+                </div>
+              </div>
+            )}
+          </div>
           <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
+            <span
+              onClick={() => { window.location.hash = 'digital-employee-workbench'; }}
+              style={{
+                cursor: 'pointer',
+                color: '#6366F1',
+                fontWeight: 500,
+                fontSize: '14px',
+                transition: 'color 0.3s',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.color = '#8B5CF6'}
+              onMouseLeave={(e) => e.currentTarget.style.color = '#6366F1'}
+            >
+              <TeamIconOutlined style={{ fontSize: '15px' }} />
+              数字员工
+            </span>
+            <div style={{ width: 1, height: 16, background: '#e8e8e8' }} />
             <span
               onClick={onFrontendClick}
               style={{
@@ -232,7 +279,6 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children, currentPage = 'home',
             <Badge count={5}>
               <BellOutlined style={{ fontSize: '18px', cursor: 'pointer' }} />
             </Badge>
-            <Avatar icon={<UserOutlined />} style={{ cursor: 'pointer' }} />
           </div>
         </Header>
         <Layout style={{ padding: '24px', background: '#f5f5f5' }}>
