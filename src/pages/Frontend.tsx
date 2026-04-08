@@ -717,65 +717,109 @@ const LiveExecutionFlow: React.FC<{ task: TaskItem; isInspect: boolean }> = ({ t
   );
 };
 
-// ─── 数字员工前台面板 ────────────────────────────────────────
+// ─── 数字员工前台面板：Feishu 风格 IM 界面 ────────────────────
+interface ChatMessage {
+  id: string;
+  role: 'user' | 'bot';
+  text: string;
+  time: string;
+  empId?: string;
+  empName?: string;
+}
+
+interface IMConversation {
+  id: string;
+  type: 'single' | 'group';
+  empIds: string[];
+  name: string;
+  messages: ChatMessage[];
+  pinned: boolean;
+  lastTime: string;
+  lastText: string;
+}
+
+interface UploadedDoc {
+  id: string;
+  name: string;
+  size: number;
+}
+
+const IM_GRADIENTS = [
+  'linear-gradient(135deg,#6366F1,#8B5CF6)',
+  'linear-gradient(135deg,#3B82F6,#06B6D4)',
+  'linear-gradient(135deg,#10B981,#34d399)',
+  'linear-gradient(135deg,#F59E0B,#FBBF24)',
+  'linear-gradient(135deg,#EF4444,#F87171)',
+  'linear-gradient(135deg,#8B5CF6,#EC4899)',
+];
+
+function imEmpGradient(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
+  return IM_GRADIENTS[Math.abs(h) % IM_GRADIENTS.length];
+}
+
+const INIT_CONVERSATIONS: IMConversation[] = [
+  {
+    id: 'conv-1', type: 'single', empIds: ['de-001'], name: '法务合规助手',
+    pinned: true, lastTime: '11:32', lastText: '合同审查任务已完成',
+    messages: [
+      { id: 'm1', role: 'bot', text: '您好！我是法务合规助手，请问有什么可以帮您？', time: '10:00', empId: 'de-001', empName: '法务合规助手' },
+      { id: 'm2', role: 'user', text: '帮我审查一份供应商合同', time: '11:30' },
+      { id: 'm3', role: 'bot', text: '好的，合同审查任务已完成，发现 3 处风险条款，已标注说明。可以在左侧任务列表查看详细报告。', time: '11:32', empId: 'de-001', empName: '法务合规助手' },
+    ],
+  },
+  {
+    id: 'conv-2', type: 'single', empIds: ['de-007'], name: '智能巡检助手',
+    pinned: false, lastTime: '09:45', lastText: '光纤预警研判已完成',
+    messages: [
+      { id: 'm4', role: 'bot', text: '您好！我是智能巡检助手，24小时为您监控管道安全。', time: '09:00', empId: 'de-007', empName: '智能巡检助手' },
+      { id: 'm5', role: 'user', text: '查看最新的预警情况', time: '09:40' },
+      { id: 'm6', role: 'bot', text: '光纤瀑布图已生成，检测到 KM-204 传感器有二级预警。点击左侧任务查看瀑布图和视频复核画面。', time: '09:45', empId: 'de-007', empName: '智能巡检助手' },
+    ],
+  },
+];
+
 export const DigitalEmployeePanel: React.FC = () => {
+  // ── 状态变量 ──
+  const [leftTab, setLeftTab] = React.useState<'contacts' | 'messages'>('contacts');
   const [search, setSearch] = React.useState('');
-  const [selectedEmp, setSelectedEmp] = React.useState<EmployeeRecord | null>(null);
+  const [convSearch, setConvSearch] = React.useState('');
+  const [conversations, setConversations] = React.useState<IMConversation[]>(INIT_CONVERSATIONS);
+  const [activeConvId, setActiveConvId] = React.useState<string | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = React.useState<string | null>(null);
   const [chatInput, setChatInput] = React.useState('');
-  const [chatMsgs, setChatMsgs] = React.useState<Array<{ role: 'user' | 'bot'; text: string; time: string }>>([]);
   const [sending, setSending] = React.useState(false);
-  const [sidebarWidth, setSidebarWidth] = React.useState(232);
+  const [deepThink, setDeepThink] = React.useState(false);
+  const [uploadedDocs, setUploadedDocs] = React.useState<UploadedDoc[]>([]);
+  const [showAddMembersModal, setShowAddMembersModal] = React.useState(false);
+  const [addMembersSelected, setAddMembersSelected] = React.useState<string[]>([]);
+  const [contextMenuConvId, setContextMenuConvId] = React.useState<string | null>(null);
   const [ratingOpen, setRatingOpen] = React.useState(false);
   const [hoverRating, setHoverRating] = React.useState(0);
   const [submittedRating, setSubmittedRating] = React.useState(0);
-  // 当前查看的任务（点击左侧任务卡片后在右侧显示详情）
-  const [selectedTaskId, setSelectedTaskId] = React.useState<string | null>(null);
-  const chatEndRef = React.useRef<HTMLDivElement>(null);
-  const rightPanelRef = React.useRef<HTMLDivElement>(null);
+  const [openedFromContacts, setOpenedFromContacts] = React.useState(false);
 
-  const employees = employeeStore.getEmployees().filter(e => e.status === 'published');
-  const filtered = employees.filter(e =>
-    !search || e.name.includes(search) || e.dept.includes(search) || e.domain.includes(search)
-  );
-  const tasks = selectedEmp ? (MOCK_TASKS[selectedEmp.id] ?? []) : [];
+  // @mention 状态
+  const [mentionOpen, setMentionOpen] = React.useState(false);
+  const [mentionFilter, setMentionFilter] = React.useState('');
+  const [mentionStart, setMentionStart] = React.useState(-1);
+
+  const inputRef = React.useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const chatEndRef = React.useRef<HTMLDivElement>(null);
+
+  const allEmployees = employeeStore.getEmployees().filter((e: EmployeeRecord) => e.status === 'published');
+  const getEmployee = (empId: string) => allEmployees.find(e => e.id === empId) || null;
+
+  const activeConv = conversations.find(c => c.id === activeConvId) || null;
+  const activeEmp = activeConv && activeConv.type === 'single' ? getEmployee(activeConv.empIds[0]) : null;
+  const tasks = activeEmp ? (MOCK_TASKS[activeEmp.id] ?? []) : [];
   const selectedTask = tasks.find(t => t.id === selectedTaskId) || null;
 
-  React.useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chatMsgs, sending]);
+  React.useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [activeConv?.messages, sending]);
 
   const getTime = () => new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
-
-  const handleSend = () => {
-    const text = chatInput.trim();
-    if (!text || !selectedEmp || sending) return;
-    const prefix = selectedTask ? `[关于任务「${selectedTask.title.slice(0,12)}…」] ` : '';
-    setChatMsgs(prev => [...prev, { role: 'user', text: prefix + text, time: getTime() }]);
-    setChatInput('');
-    setSending(true);
-    setTimeout(() => {
-      const name = selectedEmp.name;
-      const replies = selectedTask ? [
-        `已收到您关于「${selectedTask.title.slice(0,16)}…」的问题。当前任务状态：${selectedTask.status === 'running' ? '执行中' : selectedTask.status === 'done' ? '已完成' : '等待中'}，已完成 ${selectedTask.steps.filter(s=>s.status==='done').length}/${selectedTask.steps.length} 个步骤。${text}`,
-        `针对该任务，我来为您详细解答：${text}。当前任务进展良好，后续步骤将按计划推进。`,
-      ] : [
-        `好的，我已收到您的任务：「${text}」，正在处理中，稍后会将结果反馈给您。`,
-        `明白了，我将立即开始处理：${text}。预计完成时间 2-3 分钟，完成后会通知您。`,
-        `任务已接收！我会按照您的要求完成「${text}」，完成后主动告知结果。`,
-      ];
-      setChatMsgs(prev => [...prev, { role: 'bot', text: replies[Math.floor(Math.random() * replies.length)], time: getTime() }]);
-      setSending(false);
-    }, 800 + Math.random() * 600);
-  };
-
-  // ── 拖拽调整侧边栏宽度 ──
-  const startResizeSidebar = (e: React.MouseEvent) => {
-    e.preventDefault();
-    const startX = e.clientX;
-    const startW = sidebarWidth;
-    const onMove = (ev: MouseEvent) => { setSidebarWidth(Math.max(160, Math.min(380, startW + ev.clientX - startX))); };
-    const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-  };
 
   // ── 步骤状态色 ──
   const stepDot: Record<string, string> = { done: '#0284c7', running: '#16a34a', waiting: '#d1d5db', failed: '#e11d48' };
@@ -789,12 +833,155 @@ export const DigitalEmployeePanel: React.FC = () => {
     waiting: { bg: '#fefce8', color: '#ca8a04', label: '等待中' },
   };
 
+  // ── 打开对话（从通讯录点击） ──
+  const openConversation = (empId: string, fromContacts = false) => {
+    setOpenedFromContacts(fromContacts);
+    const existing = conversations.find(c => c.type === 'single' && c.empIds[0] === empId);
+    if (existing) {
+      setActiveConvId(existing.id);
+      setSelectedTaskId(null);
+      return;
+    }
+    const emp = getEmployee(empId);
+    if (!emp) return;
+    const newConv: IMConversation = {
+      id: `conv-${Date.now()}`,
+      type: 'single',
+      empIds: [empId],
+      name: emp.name,
+      pinned: false,
+      lastTime: getTime(),
+      lastText: '新对话',
+      messages: [
+        { id: `m-${Date.now()}`, role: 'bot', text: `您好！我是${emp.name}，请问有什么可以帮您？`, time: getTime(), empId: emp.id, empName: emp.name },
+      ],
+    };
+    setConversations(prev => [...prev, newConv]);
+    setActiveConvId(newConv.id);
+    setSelectedTaskId(null);
+  };
+
+  // ── 输入监控（@mention） ──
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = e.target.value;
+    setChatInput(val);
+    const pos = e.target.selectionStart;
+    const before = val.slice(0, pos);
+    const lastAt = before.lastIndexOf('@');
+    if (lastAt >= 0 && (lastAt === 0 || /\s/.test(before[lastAt - 1]))) {
+      const after = val.slice(lastAt + 1, pos);
+      if (!/\s/.test(after)) {
+        setMentionFilter(after);
+        setMentionStart(lastAt);
+        setMentionOpen(true);
+        return;
+      }
+    }
+    setMentionOpen(false);
+  };
+
+  const insertMention = (empName: string) => {
+    if (mentionStart < 0) return;
+    const before = chatInput.slice(0, mentionStart);
+    const after = chatInput.slice(inputRef.current?.selectionStart || chatInput.length);
+    const newVal = before + `@${empName} ` + after;
+    setChatInput(newVal);
+    setMentionOpen(false);
+    inputRef.current?.focus();
+  };
+
+  // ── 发送消息 ──
+  const handleSend = () => {
+    const text = chatInput.trim();
+    if (!text || !activeConv || sending) return;
+    const prefix = selectedTask ? `[关于任务「${selectedTask.title.slice(0, 12)}…」] ` : '';
+    const userMsg: ChatMessage = { id: `m-${Date.now()}`, role: 'user', text: prefix + text, time: getTime() };
+    setConversations(prev => prev.map(c => c.id === activeConvId ? {
+      ...c,
+      messages: [...c.messages, userMsg],
+      lastTime: userMsg.time,
+      lastText: text.slice(0, 20),
+    } : c));
+    setChatInput('');
+    setSending(true);
+
+    setTimeout(() => {
+      if (activeConv.type === 'single') {
+        const emp = getEmployee(activeConv.empIds[0]);
+        if (!emp) return;
+        const replies = selectedTask ? [
+          `已收到您关于「${selectedTask.title.slice(0, 16)}…」的问题。当前任务状态：${selectedTask.status === 'running' ? '执行中' : selectedTask.status === 'done' ? '已完成' : '等待中'}，已完成 ${selectedTask.steps.filter(s => s.status === 'done').length}/${selectedTask.steps.length} 个步骤。`,
+          `针对该任务，我来为您详细解答。当前任务进展良好，后续步骤将按计划推进。`,
+        ] : [
+          `好的，我已收到您的任务：「${text}」，正在处理中，稍后会将结果反馈给您。`,
+          `明白了，我将立即开始处理：${text}���预计完成时间 2-3 分钟，完成后会通知您。`,
+          `任务已接收！我会按照您的要求完成「${text}」，完成后主动告知结果。`,
+        ];
+        const botMsg: ChatMessage = { id: `m-${Date.now()}`, role: 'bot', text: replies[Math.floor(Math.random() * replies.length)], time: getTime(), empId: emp.id, empName: emp.name };
+        setConversations(prev => prev.map(c => c.id === activeConvId ? {
+          ...c,
+          messages: [...c.messages, botMsg],
+          lastTime: botMsg.time,
+          lastText: botMsg.text.slice(0, 20),
+        } : c));
+      } else {
+        // 群聊：每个成员依次回复
+        activeConv.empIds.forEach((empId, idx) => {
+          setTimeout(() => {
+            const emp = getEmployee(empId);
+            if (!emp) return;
+            const botMsg: ChatMessage = { id: `m-${Date.now()}-${idx}`, role: 'bot', text: `[${emp.name}] 收到！我会协助处理「${text}」相关内容。`, time: getTime(), empId: emp.id, empName: emp.name };
+            setConversations(prev => prev.map(c => c.id === activeConvId ? {
+              ...c,
+              messages: [...c.messages, botMsg],
+              lastTime: botMsg.time,
+              lastText: botMsg.text.slice(0, 20),
+            } : c));
+          }, idx * 600);
+        });
+      }
+      setSending(false);
+    }, 800 + Math.random() * 600);
+  };
+
+  // ── 固定/取消固定对话 ──
+  const togglePin = (convId: string) => {
+    setConversations(prev => prev.map(c => c.id === convId ? { ...c, pinned: !c.pinned } : c));
+  };
+
+  // ── 删除对话 ──
+  const deleteConv = (convId: string) => {
+    setConversations(prev => prev.filter(c => c.id !== convId));
+    if (activeConvId === convId) setActiveConvId(null);
+  };
+
+  // ── 升级为群聊 ──
+  const upgradeToGroup = () => {
+    if (!activeConv || activeConv.type === 'group') return;
+    setShowAddMembersModal(true);
+    setAddMembersSelected([]);
+  };
+
+  const confirmAddMembers = () => {
+    if (!activeConv || addMembersSelected.length === 0) return;
+    const newEmpIds = [...activeConv.empIds, ...addMembersSelected];
+    const names = newEmpIds.map(id => getEmployee(id)?.name || '').filter(Boolean);
+    setConversations(prev => prev.map(c => c.id === activeConvId ? {
+      ...c,
+      type: 'group' as const,
+      empIds: newEmpIds,
+      name: names.join('、'),
+    } : c));
+    setShowAddMembersModal(false);
+    setSelectedTaskId(null);
+  };
+
   // ─────────────────────────────────────────────
   //  任务详情渲染（通用 + 智能巡检专属）
   // ─────────────────────────────────────────────
   const renderTaskDetail = (task: TaskItem) => {
     const cfg = taskStatusCfg[task.status] ?? taskStatusCfg.waiting;
-    const isInspect = selectedEmp?.id === 'de-007';
+    const isInspect = activeEmp?.id === 'de-007';
 
     // ── 通用任务头部 ──────────────────────────────
     const TaskHeader = () => (
@@ -1101,271 +1288,461 @@ export const DigitalEmployeePanel: React.FC = () => {
   };
 
 
+
+  // ── 过滤员工/对话 ──
+  const filteredContacts = allEmployees.filter(e =>
+    !search || e.name.includes(search) || e.dept.includes(search) || e.domain.includes(search)
+  );
+  const sortedConvs = [...conversations]
+    .filter(c => !convSearch || c.name.includes(convSearch))
+    .sort((a, b) => {
+      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+      return b.lastTime.localeCompare(a.lastTime);
+    });
+
+  const mentionCandidates = allEmployees;
+  const filteredMentions = mentionCandidates.filter(e => e.name.includes(mentionFilter));
+
   return (
     <div style={{ width: '100%', display: 'flex', gap: 0, height: '100%', alignSelf: 'stretch', flex: 1, minHeight: 0 }}>
 
-      {/* ── 左侧：员工列表 ── */}
-      <div style={{ width: sidebarWidth, flexShrink: 0, display: 'flex', flexDirection: 'column', background: '#fff', borderRadius: '12px 0 0 12px', border: '1px solid #f0f0f0' }}>
-        {/* 标题 + 搜索 */}
-        <div style={{ padding: '16px 14px 12px', borderBottom: '1px solid #f0f0f0', flexShrink: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a', marginBottom: 10 }}>🤖 数字员工</div>
+      {/* ────────────────────────────────────────────────────────── */}
+      {/* ── 左侧边栏：通讯录 + 消息 ── */}
+      {/* ────────────────────────────────────────────────────────── */}
+      <div style={{ width: 280, flexShrink: 0, display: 'flex', flexDirection: 'column', background: '#fff', borderRight: '1px solid #f0f0f0' }}>
+        {/* 顶部标签 */}
+        <div style={{ display: 'flex', borderBottom: '1px solid #f0f0f0', flexShrink: 0 }}>
+          {(['contacts', 'messages'] as const).map(tab => (
+            <div
+              key={tab}
+              onClick={() => setLeftTab(tab)}
+              style={{
+                flex: 1, textAlign: 'center', padding: '12px 0', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                color: leftTab === tab ? '#6366F1' : '#999',
+                borderBottom: leftTab === tab ? '2px solid #6366F1' : '2px solid transparent',
+                transition: 'all 0.2s',
+              }}
+            >
+              {tab === 'contacts' ? '通讯录' : '消息'}
+            </div>
+          ))}
+        </div>
+
+        {/* 搜索框 */}
+        <div style={{ padding: '10px 12px', borderBottom: '1px solid #f0f0f0', flexShrink: 0 }}>
           <input
-            placeholder="搜索员工..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
+            placeholder={leftTab === 'contacts' ? '搜索员工...' : '搜索对话...'}
+            value={leftTab === 'contacts' ? search : convSearch}
+            onChange={e => leftTab === 'contacts' ? setSearch(e.target.value) : setConvSearch(e.target.value)}
             style={{ width: '100%', padding: '7px 10px', borderRadius: 7, border: '1px solid #e8e8e8', fontSize: 12, outline: 'none', boxSizing: 'border-box', background: '#fafafa' }}
           />
         </div>
-        {/* 员工列表 */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
-          {filtered.map(emp => {
-            const isActive = selectedEmp?.id === emp.id;
-            const empTasks = MOCK_TASKS[emp.id] ?? [];
-            const running = empTasks.filter(t => t.status === 'running').length;
-            return (
-              <div
-                key={emp.id}
-                onClick={() => {
-                  setSelectedEmp(emp);
-                  setSelectedTaskId(null);
-                  setChatMsgs([]);
-                  setRatingOpen(false);
-                  setSubmittedRating(0);
-                  setHoverRating(0);
-                }}
-                style={{ padding: '10px 14px', cursor: 'pointer', transition: 'all 0.15s', background: isActive ? 'linear-gradient(135deg, #EEF2FF, #F5F3FF)' : 'transparent', borderLeft: isActive ? '3px solid #6366F1' : '3px solid transparent', borderBottom: '1px solid #f5f5f5' }}
-                onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLDivElement).style.background = '#fafbff'; }}
-                onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-                  <div style={{ position: 'relative', flexShrink: 0 }}>
-                    <div style={{ width: 34, height: 34, borderRadius: 9, background: empGradient(emp.name), display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 13, fontWeight: 700 }}>
-                      {emp.name.charAt(0)}
-                      {running > 0 && <span style={{ position: 'absolute', top: -3, right: -3, width: 8, height: 8, borderRadius: '50%', background: '#22c55e', border: '1.5px solid #fff' }} />}
+
+        {/* 通讯录列表 */}
+        {leftTab === 'contacts' && (
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            {filteredContacts.map(emp => {
+              const empTasks = MOCK_TASKS[emp.id] ?? [];
+              const running = empTasks.filter(t => t.status === 'running').length;
+              return (
+                <div
+                  key={emp.id}
+                  onClick={() => openConversation(emp.id, true)}
+                  style={{ padding: '10px 14px', cursor: 'pointer', borderBottom: '1px solid #f5f5f5', transition: 'background 0.15s' }}
+                  onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.background = '#fafbff'}
+                  onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.background = 'transparent'}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ position: 'relative', flexShrink: 0 }}>
+                      <div style={{ width: 38, height: 38, borderRadius: 9, background: imEmpGradient(emp.name), display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 14, fontWeight: 700 }}>
+                        {emp.name.charAt(0)}
+                      </div>
+                      {running > 0 && <span style={{ position: 'absolute', top: -2, right: -2, width: 9, height: 9, borderRadius: '50%', background: '#22c55e', border: '2px solid #fff' }} />}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{emp.name}</div>
+                      <div style={{ fontSize: 11, color: '#aaa', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{emp.domain}</div>
                     </div>
                   </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: '#1a1a1a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{emp.name}</div>
-                    <div style={{ fontSize: 10, color: '#aaa', marginTop: 1 }}>{emp.domain}</div>
+                </div>
+              );
+            })}
+            {filteredContacts.length === 0 && <div style={{ textAlign: 'center', padding: '40px 0', color: '#bbb', fontSize: 12 }}>暂无员工</div>}
+          </div>
+        )}
+
+        {/* 消息列表 */}
+        {leftTab === 'messages' && (
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            {sortedConvs.map(conv => {
+              const isActive = conv.id === activeConvId;
+              const firstEmp = getEmployee(conv.empIds[0]);
+              return (
+                <div
+                  key={conv.id}
+                  onClick={() => { setActiveConvId(conv.id); setSelectedTaskId(null); setOpenedFromContacts(false); }}
+                  onContextMenu={e => { e.preventDefault(); setContextMenuConvId(conv.id); }}
+                  style={{
+                    padding: '10px 14px', cursor: 'pointer', borderBottom: '1px solid #f5f5f5',
+                    background: isActive ? 'linear-gradient(135deg, #EEF2FF, #F5F3FF)' : 'transparent',
+                    borderLeft: isActive ? '3px solid #6366F1' : '3px solid transparent',
+                    transition: 'all 0.15s',
+                    position: 'relative',
+                  }}
+                  onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLDivElement).style.background = '#fafbff'; }}
+                  onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                    <div style={{ width: 38, height: 38, borderRadius: 9, background: firstEmp ? imEmpGradient(firstEmp.name) : '#bbb', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 14, fontWeight: 700, flexShrink: 0 }}>
+                      {conv.type === 'group' ? '群' : (firstEmp?.name.charAt(0) || '?')}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{conv.name}</span>
+                        {conv.pinned && <span style={{ fontSize: 10, color: '#F59E0B' }}>📌</span>}
+                        <span style={{ fontSize: 10, color: '#bbb', marginLeft: 'auto', flexShrink: 0 }}>{conv.lastTime}</span>
+                      </div>
+                      <div style={{ fontSize: 11, color: '#888', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{conv.lastText}…</div>
+                    </div>
+                  </div>
+                  {contextMenuConvId === conv.id && (
+                    <div style={{ position: 'absolute', right: 10, top: 10, background: '#fff', boxShadow: '0 2px 10px rgba(0,0,0,0.15)', borderRadius: 6, overflow: 'hidden', zIndex: 100 }}>
+                      <div onClick={e => { e.stopPropagation(); togglePin(conv.id); setContextMenuConvId(null); }} style={{ padding: '8px 16px', fontSize: 12, cursor: 'pointer', borderBottom: '1px solid #f0f0f0' }}>{conv.pinned ? '取消置顶' : '置顶对话'}</div>
+                      <div onClick={e => { e.stopPropagation(); deleteConv(conv.id); setContextMenuConvId(null); }} style={{ padding: '8px 16px', fontSize: 12, cursor: 'pointer', color: '#EF4444' }}>删除对话</div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {sortedConvs.length === 0 && <div style={{ textAlign: 'center', padding: '40px 0', color: '#bbb', fontSize: 12 }}>暂无对话</div>}
+          </div>
+        )}
+      </div>
+
+      {/* ────────────────────────────────────────────────────────── */}
+      {/* ── 中间任务列表（仅单聊时显示） ── */}
+      {/* ────────────────────────────────────────────────────────── */}
+      {activeConv && activeConv.type === 'single' && activeEmp && openedFromContacts && (
+        <div style={{ width: 280, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRight: '1px solid #f0f0f0', background: '#fff' }}>
+          <div style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: '#1a1a1a', borderBottom: '1px solid #f0f0f0', background: '#fff', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span>📋</span> 任务执行状态
+            <span style={{ marginLeft: 'auto', fontSize: 11, color: '#bbb', fontWeight: 400 }}>近期 {tasks.length} 条</span>
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '8px', display: 'flex', flexDirection: 'column', gap: 7 }}>
+            {tasks.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '48px 0', color: '#bbb', fontSize: 13 }}>
+                <div style={{ fontSize: 28, marginBottom: 8 }}>📭</div>暂无任务记录
+              </div>
+            ) : tasks.map(task => {
+              const cfg = taskStatusCfg[task.status] ?? taskStatusCfg.waiting;
+              const isSelected = selectedTaskId === task.id;
+              return (
+                <div
+                  key={task.id}
+                  onClick={() => setSelectedTaskId(isSelected ? null : task.id)}
+                  style={{
+                    background: isSelected ? 'linear-gradient(135deg,#EEF2FF,#F5F3FF)' : '#fafafa',
+                    borderRadius: 9,
+                    border: isSelected ? `1.5px solid #6366F1` : `1px solid ${cfg.color}28`,
+                    cursor: 'pointer',
+                    transition: 'all 0.15s',
+                    padding: '10px 12px',
+                  }}
+                  onMouseEnter={e => { if (!isSelected) (e.currentTarget as HTMLDivElement).style.background = '#f0f0fa'; }}
+                  onMouseLeave={e => { if (!isSelected) (e.currentTarget as HTMLDivElement).style.background = '#fafafa'; }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 7, marginBottom: 6 }}>
+                    <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 7, background: cfg.bg, color: cfg.color, fontWeight: 600, flexShrink: 0, marginTop: 1 }}>{cfg.label}</span>
+                    <div style={{ flex: 1, fontSize: 12, color: isSelected ? '#4338CA' : '#333', lineHeight: 1.5, fontWeight: isSelected ? 600 : 500 }}>{task.title}</div>
+                  </div>
+                  {task.result && !isSelected && (
+                    <div style={{ fontSize: 10, color: '#666', marginBottom: 5, lineHeight: 1.4, padding: '4px 7px', background: '#fff', borderRadius: 5 }}>💡 {task.result}</div>
+                  )}
+                  <div style={{ display: 'flex', gap: 8, fontSize: 10, color: '#bbb', alignItems: 'center' }}>
+                    <span>🕐 {task.time}</span>
+                    {task.duration && <span>⏱ {task.duration}</span>}
                   </div>
                 </div>
-                {empTasks.length > 0 && (
-                  <div style={{ marginTop: 7, display: 'flex', gap: 4 }}>
-                    {running > 0 && <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 8, background: '#f0fdf4', color: '#16a34a', fontWeight: 500 }}>执行中 {running}</span>}
-                    <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 8, background: '#f5f5f5', color: '#888' }}>共 {empTasks.length} 任务</span>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-          {filtered.length === 0 && <div style={{ textAlign: 'center', padding: '30px 0', color: '#bbb', fontSize: 12 }}>暂无员工</div>}
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* ── 侧���栏拖拽手柄 ── */}
-      <div
-        onMouseDown={startResizeSidebar}
-        style={{ width: 5, flexShrink: 0, cursor: 'col-resize', background: 'transparent', transition: 'background 0.15s', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10 }}
-        onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = 'rgba(199,210,254,0.5)'; }}
-        onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}
-      >
-        <div style={{ width: 2, height: 40, borderRadius: 2, background: '#C7D2FE', opacity: 0.7 }} />
-      </div>
+      {/* ────────────────────────────────────────────────────────── */}
+      {/* ── 右侧：聊天 + 任务详情 ── */}
+      {/* ────────────────────────────────────────────────────────── */}
+      {activeConv ? (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#f7f8fc', minHeight: 0 }}>
 
-      {/* ── 右侧：详情面板 ── */}
-      {selectedEmp ? (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', border: '1px solid #f0f0f0', borderLeft: 'none', borderRadius: '0 12px 12px 0', overflow: 'hidden', background: '#f7f8fc', minHeight: 0 }}>
-
-          {/* ── 员工信息栏 ── */}
-          <div style={{ background: '#fff', borderBottom: '1px solid #f0f0f0', flexShrink: 0 }}>
-            <div style={{ padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 14 }}>
-              <div style={{ width: 48, height: 48, borderRadius: 13, flexShrink: 0, background: empGradient(selectedEmp.name), display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 18, fontWeight: 700, boxShadow: '0 3px 10px rgba(99,102,241,0.25)' }}>
-                {selectedEmp.name.charAt(0)}
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
-                  <span style={{ fontSize: 16, fontWeight: 700, color: '#1a1a1a' }}>{selectedEmp.name}</span>
-                  <span style={{ fontSize: 10, padding: '2px 9px', borderRadius: 10, background: '#f0fdf4', color: '#16a34a', fontWeight: 600, border: '1px solid #bbf7d0', letterSpacing: 0.3 }}>● 运行中</span>
-                </div>
-                <div style={{ fontSize: 11, color: '#aaa' }}>
-                  {selectedEmp.dept}<span style={{ margin: '0 5px', opacity: 0.4 }}>·</span>{selectedEmp.domain}<span style={{ margin: '0 5px', opacity: 0.4 }}>·</span>{selectedEmp.version}
-                </div>
-              </div>
+          {/* ── 头部：对话信息 + 按钮 ── */}
+          <div style={{ background: '#fff', borderBottom: '1px solid #f0f0f0', flexShrink: 0, padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 14 }}>
+            <div style={{ width: 44, height: 44, borderRadius: 11, flexShrink: 0, background: activeConv.type === 'group' ? '#8B5CF6' : (activeEmp ? imEmpGradient(activeEmp.name) : '#bbb'), display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 16, fontWeight: 700 }}>
+              {activeConv.type === 'group' ? '群' : (activeEmp?.name.charAt(0) || '?')}
             </div>
-            <div style={{ padding: '8px 20px 11px 82px', background: '#FAFBFF', borderTop: '1px solid #F3F4F6' }}>
-              <span style={{ fontSize: 12, color: '#6B7280', lineHeight: 1.7 }}>
-                <span style={{ color: '#9CA3AF', marginRight: 5 }}>📌</span>{selectedEmp.description}
-              </span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a' }}>{activeConv.name}</div>
+              {activeConv.type === 'group' && (
+                <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>{activeConv.empIds.length} 位成员</div>
+              )}
+              {activeEmp && (
+                <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>{activeEmp.domain}</div>
+              )}
             </div>
+            {activeConv.type === 'single' && (
+              <button onClick={upgradeToGroup} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #e0deff', background: '#fff', color: '#6366F1', fontSize: 18, cursor: 'pointer', fontWeight: 500, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>
+                +
+              </button>
+            )}
           </div>
 
-          {/* ── 主体：左任务列表 + 右详情/对话 ── */}
-          <div ref={rightPanelRef} style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
+          {/* ── 内容区：任务详情（可选）+ 聊天消息 ── */}
+          <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+            {/* 任务详情卡 */}
+            {selectedTask && renderTaskDetail(selectedTask)}
 
-            {/* 任务执行状态列表 */}
-            <div style={{ width: 280, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRight: '1px solid #f0f0f0', background: '#fff' }}>
-              <div style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: '#1a1a1a', borderBottom: '1px solid #f0f0f0', background: '#fff', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span>📋</span> 任务执行状态
-                <span style={{ marginLeft: 'auto', fontSize: 11, color: '#bbb', fontWeight: 400 }}>近期 {tasks.length} 条</span>
-              </div>
-              <div style={{ flex: 1, overflowY: 'auto', padding: '8px', display: 'flex', flexDirection: 'column', gap: 7 }}>
-                {tasks.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '48px 0', color: '#bbb', fontSize: 13 }}>
-                    <div style={{ fontSize: 28, marginBottom: 8 }}>📭</div>暂无任务记录
+            {/* 聊天消息 */}
+            <div style={{ flex: 1, padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 12, minHeight: selectedTask ? 120 : undefined }}>
+              {activeConv.messages.length === 0 && (
+                <div style={{ textAlign: 'center', color: '#bbb', padding: selectedTask ? '16px 0' : '32px 0' }}>
+                  {!selectedTask && <div style={{ fontSize: 28, marginBottom: 8 }}>💬</div>}
+                  <div style={{ fontSize: 13, marginBottom: selectedTask ? 0 : 16, color: '#bbb' }}>
+                    {selectedTask ? `可在此与 ${activeConv.name} 就该任务进行对话` : `向 ${activeConv.name} 发送任务或提问`}
                   </div>
-                ) : tasks.map(task => {
-                  const cfg = taskStatusCfg[task.status] ?? taskStatusCfg.waiting;
-                  const isSelected = selectedTaskId === task.id;
-                  return (
-                    <div
-                      key={task.id}
-                      onClick={() => setSelectedTaskId(isSelected ? null : task.id)}
-                      style={{ background: isSelected ? 'linear-gradient(135deg,#EEF2FF,#F5F3FF)' : '#fafafa', borderRadius: 9, border: isSelected ? `1.5px solid #6366F1` : `1px solid ${cfg.color}28`, cursor: 'pointer', transition: 'all 0.15s', padding: '10px 12px' }}
-                      onMouseEnter={e => { if (!isSelected) (e.currentTarget as HTMLDivElement).style.background = '#f0f0fa'; }}
-                      onMouseLeave={e => { if (!isSelected) (e.currentTarget as HTMLDivElement).style.background = '#fafafa'; }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 7, marginBottom: 6 }}>
-                        <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 7, background: cfg.bg, color: cfg.color, fontWeight: 600, flexShrink: 0, marginTop: 1 }}>{cfg.label}</span>
-                        <div style={{ flex: 1, fontSize: 12, color: isSelected ? '#4338CA' : '#333', lineHeight: 1.5, fontWeight: isSelected ? 600 : 500 }}>{task.title}</div>
-                      </div>
-                      {task.result && !isSelected && (
-                        <div style={{ fontSize: 10, color: '#666', marginBottom: 5, lineHeight: 1.4, padding: '4px 7px', background: '#fff', borderRadius: 5 }}>💡 {task.result}</div>
-                      )}
-                      <div style={{ display: 'flex', gap: 8, fontSize: 10, color: '#bbb', alignItems: 'center' }}>
-                        <span>🕐 {task.time}</span>
-                        {task.duration && <span>⏱ {task.duration}</span>}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* 右侧：任务详情 + 对话区 */}
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
-              {/* 头部：对话 / 任务详情 标签 */}
-              <div style={{ padding: '10px 16px', fontSize: 13, fontWeight: 600, color: '#1a1a1a', borderBottom: '1px solid #f0f0f0', background: '#fff', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
-                {selectedTask ? (
-                  <>
-                    <span>📄</span> 任务详情
-                    <span style={{ fontSize: 11, color: '#6366F1', fontWeight: 400, marginLeft: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 200 }}>· {selectedTask.title}</span>
-                  </>
-                ) : (
-                  <><span>💬</span> 对话</>
-                )}
-                <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
-                  {chatMsgs.length > 0 && !ratingOpen && (
-                    <div
-                      onClick={() => { setRatingOpen(true); setHoverRating(0); }}
-                      style={{ fontSize: 11, padding: '3px 10px', borderRadius: 8, cursor: 'pointer', background: submittedRating > 0 ? '#FFFBEB' : '#f5f5f5', color: submittedRating > 0 ? '#B45309' : '#888', border: submittedRating > 0 ? '1px solid #FDE68A' : '1px solid transparent', fontWeight: submittedRating > 0 ? 600 : 400 }}
-                      onMouseEnter={e => { if (!submittedRating) (e.currentTarget as HTMLDivElement).style.background = '#EEF2FF'; }}
-                      onMouseLeave={e => { if (!submittedRating) (e.currentTarget as HTMLDivElement).style.background = '#f5f5f5'; }}
-                    >
-                      {submittedRating > 0 ? `${'★'.repeat(submittedRating)}${'☆'.repeat(5 - submittedRating)}` : '评价对话'}
+                  {!selectedTask && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 7, textAlign: 'left', maxWidth: 280, margin: '0 auto' }}>
+                      {['帮我生成今日工作汇报', '当前有哪些任务在执行？', '最近一次任务的结果是什么？'].map(tip => (
+                        <div key={tip} onClick={() => setChatInput(tip)} style={{ padding: '8px 13px', borderRadius: 8, background: '#f5f4ff', color: '#6366F1', fontSize: 12, cursor: 'pointer', border: '1px solid #e0deff' }}>{tip}</div>
+                      ))}
                     </div>
                   )}
                 </div>
-              </div>
-
-              {/* 内容区：任务详情（可滚动）+ 对话消息 */}
-              <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-                {/* 任务详情卡 */}
-                {selectedTask && renderTaskDetail(selectedTask)}
-
-                {/* 对话消息 */}
-                <div style={{ flex: 1, padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 12, minHeight: selectedTask ? 80 : undefined }}>
-                  {chatMsgs.length === 0 && (
-                    <div style={{ textAlign: 'center', color: '#bbb', padding: selectedTask ? '16px 0' : '32px 0' }}>
-                      {!selectedTask && <div style={{ fontSize: 28, marginBottom: 8 }}>💬</div>}
-                      <div style={{ fontSize: 13, marginBottom: selectedTask ? 0 : 16, color: '#bbb' }}>
-                        {selectedTask ? `可在此与 ${selectedEmp.name} 就该任务进行对话` : `向 ${selectedEmp.name} 发送任务或提问`}
-                      </div>
-                      {!selectedTask && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 7, textAlign: 'left', maxWidth: 280, margin: '0 auto' }}>
-                          {['帮我生成今日工作汇报', '当前有哪些任务在执行？', '最近一次任务的结果是什么？'].map(tip => (
-                            <div key={tip} onClick={() => setChatInput(tip)} style={{ padding: '8px 13px', borderRadius: 8, background: '#f5f4ff', color: '#6366F1', fontSize: 12, cursor: 'pointer', border: '1px solid #e0deff' }}>{tip}</div>
-                          ))}
-                        </div>
-                      )}
+              )}
+              {activeConv.messages.map((msg, i) => (
+                <div key={msg.id} style={{ display: 'flex', flexDirection: msg.role === 'user' ? 'row-reverse' : 'row', gap: 8, alignItems: 'flex-end' }}>
+                  {msg.role === 'bot' && (
+                    <div style={{ width: 28, height: 28, borderRadius: 8, background: msg.empId ? imEmpGradient(getEmployee(msg.empId)?.name || '') : '#bbb', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
+                      {msg.empId ? (getEmployee(msg.empId)?.name.charAt(0) || '?') : '?'}
                     </div>
                   )}
-                  {chatMsgs.map((msg, i) => (
-                    <div key={i} style={{ display: 'flex', flexDirection: msg.role === 'user' ? 'row-reverse' : 'row', gap: 8, alignItems: 'flex-end' }}>
-                      {msg.role === 'bot' && (
-                        <div style={{ width: 28, height: 28, borderRadius: 8, background: empGradient(selectedEmp.name), display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
-                          {selectedEmp.name.charAt(0)}
-                        </div>
-                      )}
-                      <div style={{ maxWidth: '80%' }}>
-                        <div style={{ padding: '9px 13px', fontSize: 13, lineHeight: 1.6, borderRadius: msg.role === 'user' ? '14px 14px 2px 14px' : '14px 14px 14px 2px', background: msg.role === 'user' ? 'linear-gradient(135deg, #6366F1, #8B5CF6)' : '#fff', color: msg.role === 'user' ? '#fff' : '#1a1a1a', border: msg.role === 'bot' ? '1px solid #ebebeb' : 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-                          {msg.text}
-                        </div>
-                        <div style={{ fontSize: 10, color: '#ccc', marginTop: 3, textAlign: msg.role === 'user' ? 'right' : 'left' }}>{msg.time}</div>
-                      </div>
+                  <div style={{ maxWidth: '80%' }}>
+                    <div style={{ padding: '9px 13px', fontSize: 13, lineHeight: 1.6, borderRadius: msg.role === 'user' ? '14px 14px 2px 14px' : '14px 14px 14px 2px', background: msg.role === 'user' ? 'linear-gradient(135deg, #6366F1, #8B5CF6)' : '#fff', color: msg.role === 'user' ? '#fff' : '#1a1a1a', border: msg.role === 'bot' ? '1px solid #ebebeb' : 'none', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+                      {msg.text}
                     </div>
-                  ))}
-                  {sending && (
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
-                      <div style={{ width: 28, height: 28, borderRadius: 8, background: empGradient(selectedEmp.name), display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 12, fontWeight: 700 }}>
-                        {selectedEmp.name.charAt(0)}
-                      </div>
-                      <div style={{ padding: '11px 15px', background: '#fff', borderRadius: '14px 14px 14px 2px', border: '1px solid #ebebeb' }}>
-                        <div style={{ display: 'flex', gap: 4 }}>
-                          <div className="ai-typing-dot" /><div className="ai-typing-dot" /><div className="ai-typing-dot" />
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                  <div ref={chatEndRef} />
+                    <div style={{ fontSize: 10, color: '#ccc', marginTop: 3, textAlign: msg.role === 'user' ? 'right' : 'left' }}>{msg.time}</div>
+                  </div>
                 </div>
-              </div>
-
-              {/* 对话评分面板 */}
-              {ratingOpen && (
-                <div style={{ padding: '14px 16px', background: '#FFFBEB', borderTop: '1px solid #FDE68A', flexShrink: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: '#92400E' }}>为本次对话评分</span>
-                    <span onClick={() => setRatingOpen(false)} style={{ fontSize: 12, color: '#bbb', cursor: 'pointer' }}>✕</span>
+              ))}
+              {sending && (
+                <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+                  <div style={{ width: 28, height: 28, borderRadius: 8, background: activeEmp ? imEmpGradient(activeEmp.name) : '#bbb', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 12, fontWeight: 700 }}>
+                    {activeEmp?.name.charAt(0) || '?'}
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 12 }}>
-                    {[1, 2, 3, 4, 5].map(i => (
-                      <span key={i} onMouseEnter={() => setHoverRating(i)} onMouseLeave={() => setHoverRating(0)} onClick={() => { setSubmittedRating(i); }} style={{ fontSize: 28, cursor: 'pointer', color: i <= (hoverRating || submittedRating) ? '#F59E0B' : '#E5E7EB', transition: 'color 0.1s', lineHeight: 1 }}>★</span>
-                    ))}
-                    {(hoverRating || submittedRating) > 0 && (
-                      <span style={{ fontSize: 12, color: '#B45309', fontWeight: 600, marginLeft: 6 }}>
-                        {['', '很差', '较差', '一般', '较好', '非常好'][hoverRating || submittedRating]}
-                      </span>
-                    )}
-                  </div>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={() => setRatingOpen(false)} style={{ flex: 1, padding: '7px 0', borderRadius: 8, border: '1px solid #e8e8e8', background: '#fff', fontSize: 12, color: '#888', cursor: 'pointer' }}>取消</button>
-                    <button disabled={submittedRating === 0} onClick={() => { if (selectedEmp && submittedRating > 0) { employeeStore.submitRating({ employeeId: selectedEmp.id, sessionId: `session-${Date.now()}`, score: submittedRating, tags: [], comment: '', timestamp: new Date().toISOString() }); } setRatingOpen(false); }} style={{ flex: 2, padding: '7px 0', borderRadius: 8, border: 'none', background: submittedRating > 0 ? 'linear-gradient(135deg, #F59E0B, #FBBF24)' : '#e8e8e8', fontSize: 12, fontWeight: 600, color: submittedRating > 0 ? '#fff' : '#bbb', cursor: submittedRating > 0 ? 'pointer' : 'not-allowed' }}>提交评分</button>
+                  <div style={{ padding: '11px 15px', background: '#fff', borderRadius: '14px 14px 14px 2px', border: '1px solid #ebebeb' }}>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      <div className="ai-typing-dot" /><div className="ai-typing-dot" /><div className="ai-typing-dot" />
+                    </div>
                   </div>
                 </div>
               )}
+              <div ref={chatEndRef} />
+            </div>
+          </div>
 
-              {/* 输入框 */}
-              <div style={{ padding: '10px 12px', borderTop: '1px solid #f0f0f0', background: '#fff', display: 'flex', gap: 8, flexShrink: 0 }}>
-                <input
-                  value={chatInput}
-                  onChange={e => setChatInput(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-                  placeholder={selectedTask ? `就「${selectedTask.title.slice(0,14)}…」提问或指令` : `给 ${selectedEmp.name} 发送任务或提问...`}
-                  disabled={sending}
-                  style={{ flex: 1, padding: '9px 13px', borderRadius: 9, border: '1px solid #e8e8e8', fontSize: 13, outline: 'none', background: '#fff' }}
-                />
-                <button onClick={handleSend} disabled={!chatInput.trim() || sending} style={{ padding: '9px 18px', borderRadius: 9, border: 'none', fontSize: 13, fontWeight: 600, cursor: chatInput.trim() && !sending ? 'pointer' : 'not-allowed', background: chatInput.trim() && !sending ? 'linear-gradient(135deg, #6366F1, #8B5CF6)' : '#e8e8e8', color: chatInput.trim() && !sending ? '#fff' : '#aaa', transition: 'all 0.15s', flexShrink: 0 }}>发送</button>
+          {/* ── 对话评分面板 ── */}
+          {ratingOpen && (
+            <div style={{ padding: '14px 16px', background: '#FFFBEB', borderTop: '1px solid #FDE68A', flexShrink: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: '#92400E' }}>为本次对话评分</span>
+                <span onClick={() => setRatingOpen(false)} style={{ fontSize: 12, color: '#bbb', cursor: 'pointer' }}>✕</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 12 }}>
+                {[1, 2, 3, 4, 5].map(i => (
+                  <span key={i} onMouseEnter={() => setHoverRating(i)} onMouseLeave={() => setHoverRating(0)} onClick={() => { setSubmittedRating(i); }} style={{ fontSize: 28, cursor: 'pointer', color: i <= (hoverRating || submittedRating) ? '#F59E0B' : '#E5E7EB', transition: 'color 0.1s', lineHeight: 1 }}>★</span>
+                ))}
+                {(hoverRating || submittedRating) > 0 && (
+                  <span style={{ fontSize: 12, color: '#B45309', fontWeight: 600, marginLeft: 6 }}>
+                    {['', '很差', '较差', '一般', '较好', '非常好'][hoverRating || submittedRating]}
+                  </span>
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={() => setRatingOpen(false)} style={{ flex: 1, padding: '7px 0', borderRadius: 8, border: '1px solid #e8e8e8', background: '#fff', fontSize: 12, color: '#888', cursor: 'pointer' }}>取消</button>
+                <button disabled={submittedRating === 0} onClick={() => { if (activeEmp && submittedRating > 0) { employeeStore.submitRating({ employeeId: activeEmp.id, sessionId: `session-${Date.now()}`, score: submittedRating, tags: [], comment: '', timestamp: new Date().toISOString() }); } setRatingOpen(false); }} style={{ flex: 2, padding: '7px 0', borderRadius: 8, border: 'none', background: submittedRating > 0 ? 'linear-gradient(135deg, #F59E0B, #FBBF24)' : '#e8e8e8', fontSize: 12, fontWeight: 600, color: submittedRating > 0 ? '#fff' : '#bbb', cursor: submittedRating > 0 ? 'pointer' : 'not-allowed' }}>提交评分</button>
+              </div>
+            </div>
+          )}
+
+          {/* ── 输入框 ── */}
+          <div style={{ padding: '10px 12px 12px', borderTop: '1px solid #f0f0f0', background: '#fff', flexShrink: 0, position: 'relative' }}>
+            {/* 统一输入容器：边框包裹 textarea + 工具栏 */}
+            <div style={{ border: '1px solid #e2e2e8', borderRadius: 12, background: '#fff', display: 'flex', flexDirection: 'column', overflow: 'visible', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', transition: 'border-color 0.15s' }}
+              onFocusCapture={e => { (e.currentTarget as HTMLDivElement).style.borderColor = '#a5b4fc'; }}
+              onBlurCapture={e => { (e.currentTarget as HTMLDivElement).style.borderColor = '#e2e2e8'; }}
+            >
+              {/* 已上传文件 chips（有文件时在 textarea 上方） */}
+              {uploadedDocs.length > 0 && (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', padding: '8px 12px 0' }}>
+                  {uploadedDocs.map(doc => (
+                    <div key={doc.id} style={{ padding: '3px 9px', background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 20, fontSize: 11, color: '#2563EB', display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <span style={{ fontSize: 12 }}>📎</span>
+                      <span style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc.name}</span>
+                      <span onClick={() => setUploadedDocs(prev => prev.filter(d => d.id !== doc.id))} style={{ cursor: 'pointer', color: '#93C5FD', fontSize: 11, lineHeight: 1 }}>✕</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Textarea：无边框，融入容器 */}
+              <textarea
+                ref={inputRef}
+                value={chatInput}
+                onChange={handleInputChange}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                placeholder={selectedTask ? `就「${selectedTask.title.slice(0, 14)}…」提问或指令` : `给 ${activeConv.name} 发送任务或提问...`}
+                disabled={sending}
+                rows={3}
+                style={{ width: '100%', padding: '12px 14px 6px', border: 'none', outline: 'none', fontSize: 13, background: 'transparent', resize: 'none', fontFamily: 'inherit', lineHeight: 1.65, boxSizing: 'border-box', color: '#1a1a1a' }}
+              />
+
+              {/* 工具栏 */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 10px 9px' }}>
+
+                {/* 隐藏 file input */}
+                <input type="file" ref={fileInputRef} onChange={e => { const files = e.target.files; if (files) Array.from(files).forEach(file => setUploadedDocs(prev => [...prev, { id: `doc-${Date.now()}-${file.name}`, name: file.name, size: file.size }])); (e.target as HTMLInputElement).value = ''; }} style={{ display: 'none' }} multiple />
+
+                {/* 📎 上传文件：仅图标方块 */}
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  title="上传文件"
+                  style={{ width: 34, height: 34, borderRadius: 8, border: '1px solid #E5E7EB', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#6B7280', fontSize: 16, flexShrink: 0, transition: 'all 0.15s' }}
+                  onMouseEnter={e => { const el = e.currentTarget; el.style.borderColor = '#A5B4FC'; el.style.color = '#6366F1'; el.style.background = '#F5F3FF'; }}
+                  onMouseLeave={e => { const el = e.currentTarget; el.style.borderColor = '#E5E7EB'; el.style.color = '#6B7280'; el.style.background = '#fff'; }}
+                >
+                  📎
+                </button>
+
+                {/* 💡 深度思考：灯泡 + 文字胶囊，点击切换 */}
+                <button
+                  onClick={() => setDeepThink(!deepThink)}
+                  title="深度思考：AI 多步推理再回答"
+                  style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 13px 5px 10px', borderRadius: 20, border: 'none', background: deepThink ? '#DBEAFE' : '#F1F5F9', color: deepThink ? '#2563EB' : '#6B7280', fontSize: 12, fontWeight: deepThink ? 600 : 500, cursor: 'pointer', flexShrink: 0, transition: 'all 0.15s' }}
+                  onMouseEnter={e => { if (!deepThink) { const el = e.currentTarget; el.style.background = '#E0E7FF'; el.style.color = '#4F46E5'; } }}
+                  onMouseLeave={e => { if (!deepThink) { const el = e.currentTarget; el.style.background = '#F1F5F9'; el.style.color = '#6B7280'; } }}
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/>
+                    <path d="M9 18h6"/><path d="M10 22h4"/>
+                  </svg>
+                  深度思考
+                </button>
+
+                {/* @ 提及：文字胶囊 */}
+                <button
+                  onClick={() => {
+                    const ta = inputRef.current;
+                    if (!ta) return;
+                    const pos = ta.selectionStart;
+                    const before = chatInput.slice(0, pos);
+                    const after = chatInput.slice(pos);
+                    const needSpace = before.length > 0 && !/\s$/.test(before);
+                    const newVal = (needSpace ? before + ' @' : before + '@') + after;
+                    const newPos = (needSpace ? pos + 2 : pos + 1);
+                    setChatInput(newVal);
+                    setMentionFilter('');
+                    setMentionStart(newPos);
+                    setMentionOpen(true);
+                    setTimeout(() => { ta.focus(); ta.setSelectionRange(newPos, newPos); }, 0);
+                  }}
+                  title="@提及员工"
+                  style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 13px 5px 10px', borderRadius: 20, border: 'none', background: '#F1F5F9', color: '#6B7280', fontSize: 12, fontWeight: 500, cursor: 'pointer', flexShrink: 0, transition: 'all 0.15s' }}
+                  onMouseEnter={e => { const el = e.currentTarget; el.style.background = '#E0F2FE'; el.style.color = '#0284C7'; }}
+                  onMouseLeave={e => { const el = e.currentTarget; el.style.background = '#F1F5F9'; el.style.color = '#6B7280'; }}
+                >
+                  <span style={{ fontSize: 13, fontWeight: 700, lineHeight: 1 }}>@</span>
+                  提及
+                </button>
+
+                {/* 右侧发送 */}
+                <button
+                  onClick={handleSend}
+                  disabled={!chatInput.trim() || sending}
+                  style={{ marginLeft: 'auto', padding: '6px 20px', borderRadius: 20, border: 'none', fontSize: 13, fontWeight: 600, cursor: chatInput.trim() && !sending ? 'pointer' : 'not-allowed', background: chatInput.trim() && !sending ? 'linear-gradient(135deg, #6366F1, #8B5CF6)' : '#E5E7EB', color: chatInput.trim() && !sending ? '#fff' : '#9CA3AF', transition: 'all 0.15s', flexShrink: 0 }}
+                >
+                  {sending ? '发送中…' : '发送'}
+                </button>
               </div>
             </div>
 
+            {/* @mention 下拉（容器外，定位在输入框上方） */}
+            {mentionOpen && filteredMentions.length > 0 && (
+              <div style={{ position: 'absolute', bottom: 'calc(100% - 6px)', left: 12, right: 12, background: '#fff', boxShadow: '0 -4px 20px rgba(0,0,0,0.1)', borderRadius: 12, overflow: 'hidden', zIndex: 300, maxHeight: 230, overflowY: 'auto', border: '1px solid #e8e8f0' }}>
+                <div style={{ padding: '7px 14px 5px', fontSize: 10, color: '#9CA3AF', fontWeight: 600, letterSpacing: 0.5, borderBottom: '1px solid #F3F4F6' }}>选择要 @ 的员工</div>
+                {filteredMentions.map(emp => (
+                  <div
+                    key={emp.id}
+                    onClick={() => insertMention(emp.name)}
+                    style={{ padding: '8px 14px', fontSize: 13, cursor: 'pointer', borderBottom: '1px solid #F9FAFB', display: 'flex', alignItems: 'center', gap: 10, transition: 'background 0.1s' }}
+                    onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.background = '#F5F3FF'}
+                    onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.background = 'transparent'}
+                  >
+                    <div style={{ width: 30, height: 30, borderRadius: 8, background: imEmpGradient(emp.name), display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
+                      {emp.name.charAt(0)}
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>{emp.name}</div>
+                      <div style={{ fontSize: 10, color: '#9CA3AF', marginTop: 1 }}>{emp.domain}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       ) : (
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid #f0f0f0', borderLeft: 'none', borderRadius: '0 12px 12px 0', background: '#fafbff' }}>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fafbff' }}>
           <div style={{ textAlign: 'center', color: '#bbb' }}>
-            <div style={{ fontSize: 40, marginBottom: 12 }}>🤖</div>
-            <div style={{ fontSize: 15, fontWeight: 600, color: '#999', marginBottom: 6 }}>选择一位数字员工</div>
-            <div style={{ fontSize: 12 }}>查看任务执行状态并发起对话</div>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>💬</div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: '#999', marginBottom: 6 }}>选择一个对话</div>
+            <div style={{ fontSize: 12 }}>或从通讯录中开始新对话</div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 添加成员弹窗 ── */}
+      {showAddMembersModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: '#fff', borderRadius: 12, width: 400, maxHeight: '70%', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid #f0f0f0', fontSize: 15, fontWeight: 700, color: '#1a1a1a' }}>添加群成员</div>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '12px 20px' }}>
+              {allEmployees.filter(e => !activeConv?.empIds.includes(e.id)).map(emp => {
+                const selected = addMembersSelected.includes(emp.id);
+                return (
+                  <div
+                    key={emp.id}
+                    onClick={() => setAddMembersSelected(prev => selected ? prev.filter(id => id !== emp.id) : [...prev, emp.id])}
+                    style={{ padding: '10px 12px', borderRadius: 8, border: selected ? '1.5px solid #6366F1' : '1px solid #f0f0f0', marginBottom: 8, cursor: 'pointer', background: selected ? '#f5f4ff' : '#fff', transition: 'all 0.15s' }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ width: 34, height: 34, borderRadius: 8, background: imEmpGradient(emp.name), display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 13, fontWeight: 700 }}>
+                        {emp.name.charAt(0)}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>{emp.name}</div>
+                        <div style={{ fontSize: 11, color: '#aaa', marginTop: 1 }}>{emp.domain}</div>
+                      </div>
+                      {selected && <span style={{ color: '#6366F1', fontSize: 16 }}>✓</span>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ padding: '12px 20px', borderTop: '1px solid #f0f0f0', display: 'flex', gap: 10 }}>
+              <button onClick={() => setShowAddMembersModal(false)} style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1px solid #e8e8e8', background: '#fff', fontSize: 13, color: '#888', cursor: 'pointer' }}>取消</button>
+              <button disabled={addMembersSelected.length === 0} onClick={confirmAddMembers} style={{ flex: 2, padding: '9px 0', borderRadius: 8, border: 'none', background: addMembersSelected.length > 0 ? 'linear-gradient(135deg, #6366F1, #8B5CF6)' : '#e8e8e8', fontSize: 13, fontWeight: 600, color: addMembersSelected.length > 0 ? '#fff' : '#bbb', cursor: addMembersSelected.length > 0 ? 'pointer' : 'not-allowed' }}>
+                确认添加 ({addMembersSelected.length})
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1373,6 +1750,7 @@ export const DigitalEmployeePanel: React.FC = () => {
     </div>
   );
 };
+
 
 
 interface FrontendProps {

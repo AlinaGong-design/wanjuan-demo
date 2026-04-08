@@ -2,17 +2,18 @@ import React, { useState, useEffect } from 'react';
 import {
   DashboardOutlined, AppstoreOutlined, BlockOutlined,
   ArrowLeftOutlined, TeamOutlined, MenuFoldOutlined, MenuUnfoldOutlined,
-  MenuOutlined, BarsOutlined,
+  MenuOutlined, BarsOutlined, ClockCircleOutlined, UserOutlined,
 } from '@ant-design/icons';
 import { Tooltip } from 'antd';
 import DigitalEmployeeWorkbench from './DigitalEmployeeWorkbench';
 import DigitalEmployeeLibrary from './DigitalEmployeeLibrary';
 import DigitalEmployeeDomain from './DigitalEmployeeDomain';
+import ScheduledTasks from './ScheduledTasks';
+import DigitalEmployeeProfile from './DigitalEmployeeProfile';
 import { DigitalEmployeePanel } from './Frontend';
-import AIAssistant from '../components/AIAssistant';
 
 // ── 页面 key ──────────────────────────────────────────────
-type PageKey = 'frontend' | 'workbench' | 'library' | 'domain';
+type PageKey = 'frontend' | 'workbench' | 'library' | 'domain' | 'scheduled' | 'profile';
 
 // ── 导航模式 ──────────────────────────────────────────────
 type NavMode = 'sidebar' | 'topbar';
@@ -27,19 +28,23 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { key: 'frontend',  label: '数字员工', icon: <TeamOutlined />,        desc: '前台交互与任务对话' },
-  { key: 'workbench', label: '工作台',   icon: <DashboardOutlined />,   desc: '数据大盘与日常管理',   group: '管理' },
-  { key: 'library',   label: '员工库',   icon: <AppstoreOutlined />,    desc: '员工全生命周期管理' },
-  { key: 'domain',    label: '业务域',   icon: <BlockOutlined />,       desc: 'AI 组织架构治理' },
+  { key: 'frontend',  label: '数字员工', icon: <TeamOutlined />,         desc: '前台交互与任务对话' },
+  { key: 'workbench', label: '工作台',   icon: <DashboardOutlined />,    desc: '数据大盘与日常管理',   group: '管理' },
+  { key: 'library',   label: '员工库',   icon: <AppstoreOutlined />,     desc: '员工全生命周期管理' },
+  { key: 'profile',   label: '360度画像', icon: <UserOutlined />,        desc: '工作时长·任务量·绩效' },
+  { key: 'scheduled', label: '定时任务', icon: <ClockCircleOutlined />,  desc: '多触发机制管理' },
+  { key: 'domain',    label: '业务域',   icon: <BlockOutlined />,        desc: 'AI 组织架构治理' },
 ];
 
 // ── hash 映射 ─────────────────────────────────────────────
 const HASH_MAP: Record<string, PageKey> = {
-  'digital-employee':          'frontend',
-  'digital-employee-frontend': 'frontend',
-  'digital-employee-workbench':'workbench',
-  'digital-employee-library':  'library',
-  'digital-employee-domain':   'domain',
+  'digital-employee':           'frontend',
+  'digital-employee-frontend':  'frontend',
+  'digital-employee-workbench': 'workbench',
+  'digital-employee-library':   'library',
+  'digital-employee-domain':    'domain',
+  'digital-employee-profile':   'profile',
+  'scheduled-tasks':            'scheduled',
 };
 
 const PAGE_HASH: Record<PageKey, string> = {
@@ -47,6 +52,8 @@ const PAGE_HASH: Record<PageKey, string> = {
   workbench: 'digital-employee-workbench',
   library:   'digital-employee-library',
   domain:    'digital-employee-domain',
+  profile:   'digital-employee-profile',
+  scheduled: 'scheduled-tasks',
 };
 
 // ── 侧边栏尺寸 ────────────────────────────────────────────
@@ -58,13 +65,13 @@ const PRIMARY = '#6366F1';
 const PRIMARY_LIGHT = '#EEF2FF';
 
 interface DigitalEmployeeHubProps {
-  initialTab?: PageKey | 'workbench' | 'library' | 'domain';
+  initialTab?: PageKey | 'workbench' | 'library' | 'domain' | 'scheduled' | 'profile';
   onBackToAdmin?: () => void;
 }
 
 const DigitalEmployeeHub: React.FC<DigitalEmployeeHubProps> = ({ initialTab, onBackToAdmin }) => {
   const getInitialPage = (): PageKey => {
-    if (initialTab && ['frontend','workbench','library','domain'].includes(initialTab as string))
+    if (initialTab && ['frontend','workbench','library','domain','profile','scheduled'].includes(initialTab as string))
       return initialTab as PageKey;
     const hash = window.location.hash.slice(1);
     return HASH_MAP[hash] ?? 'frontend';
@@ -101,16 +108,18 @@ const DigitalEmployeeHub: React.FC<DigitalEmployeeHubProps> = ({ initialTab, onB
     // 数字员工前台：flex 撑满，不额外加 padding
     if (page === 'frontend') {
       return (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0, padding: 16 }}>
+        <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
           <DigitalEmployeePanel />
         </div>
       );
     }
     return (
-      <div style={{ flex: 1, padding: 24, overflowY: 'auto' }}>
-        {page === 'workbench' && <DigitalEmployeeWorkbench />}
-        {page === 'library'   && <DigitalEmployeeLibrary />}
-        {page === 'domain'    && <DigitalEmployeeDomain />}
+      <div style={{ flex: 1, overflowY: 'auto' }}>
+        {page === 'workbench'  && <div style={{ padding: 24 }}><DigitalEmployeeWorkbench /></div>}
+        {page === 'library'    && <div style={{ padding: 24 }}><DigitalEmployeeLibrary /></div>}
+        {page === 'domain'     && <div style={{ padding: 24 }}><DigitalEmployeeDomain /></div>}
+        {page === 'profile'    && <DigitalEmployeeProfile embedded />}
+        {page === 'scheduled'  && <ScheduledTasks />}
       </div>
     );
   };
@@ -320,7 +329,6 @@ const DigitalEmployeeHub: React.FC<DigitalEmployeeHubProps> = ({ initialTab, onB
           {renderContent()}
         </div>
 
-        {page !== 'frontend' && <AIAssistant />}
       </div>
     );
   }
@@ -429,7 +437,6 @@ const DigitalEmployeeHub: React.FC<DigitalEmployeeHubProps> = ({ initialTab, onB
         {renderContent()}
       </div>
 
-      {page !== 'frontend' && <AIAssistant />}
     </div>
   );
 };

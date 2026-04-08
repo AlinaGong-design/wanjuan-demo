@@ -24,6 +24,8 @@ import OpenClawInstances from './pages/OpenClawInstances';
 import DigitalAvatar from './pages/DigitalAvatar';
 import DigitalEmployee from './pages/DigitalEmployee';
 import DigitalEmployeeHub from './pages/DigitalEmployeeHub';
+import ScheduledTasks from './pages/ScheduledTasks';
+import DigitalEmployeeProfile from './pages/DigitalEmployeeProfile';
 import UserProfile from './pages/UserProfile';
 import './App.css';
 
@@ -57,6 +59,8 @@ type PageType =
   | 'digital-employee-workbench'
   | 'digital-employee-library'
   | 'digital-employee-domain'
+  | 'scheduled-tasks'
+  | 'digital-employee-profile'
   | 'profile';
 
 function App() {
@@ -121,7 +125,7 @@ function App() {
           setEvaluatorEditorMode(mode);
           setEditingEvaluatorId(evaluatorId);
           setCurrentPage('evaluator-editor');
-        } else if (['home', 'agent', 'knowledge', 'skill', 'workflow', 'mcp', 'api', 'components', 'model', 'evaluation', 'evaluation-tasks', 'evaluation-data', 'evaluation-rules', 'trace', 'system', 'channels', 'openclaw', 'openclaw-instances', 'digital-avatar', 'digital-employee', 'digital-employee-workbench', 'digital-employee-library', 'digital-employee-domain', 'profile'].includes(path)) {
+        } else if (['home', 'agent', 'knowledge', 'skill', 'workflow', 'mcp', 'api', 'components', 'model', 'evaluation', 'evaluation-tasks', 'evaluation-data', 'evaluation-rules', 'trace', 'system', 'channels', 'openclaw', 'openclaw-instances', 'digital-avatar', 'digital-employee', 'digital-employee-workbench', 'digital-employee-library', 'digital-employee-domain', 'scheduled-tasks', 'digital-employee-profile', 'profile'].includes(path)) {
           setCurrentPage(path as PageType);
         }
       }
@@ -329,12 +333,14 @@ function App() {
     return <OpenClawDashboard />;
   }
 
-  if (currentPage === 'digital-employee' || currentPage === 'digital-employee-workbench' || currentPage === 'digital-employee-library' || currentPage === 'digital-employee-domain') {
-    const tabMap: Record<string, 'frontend' | 'workbench' | 'library' | 'domain'> = {
+  if (currentPage === 'digital-employee' || currentPage === 'digital-employee-workbench' || currentPage === 'digital-employee-library' || currentPage === 'digital-employee-domain' || currentPage === 'scheduled-tasks' || currentPage === 'digital-employee-profile') {
+    const tabMap: Record<string, 'frontend' | 'workbench' | 'library' | 'domain' | 'scheduled' | 'profile'> = {
       'digital-employee':          'frontend',
       'digital-employee-workbench':'workbench',
       'digital-employee-library':  'library',
       'digital-employee-domain':   'domain',
+      'scheduled-tasks':           'scheduled',
+      'digital-employee-profile':  'profile',
     };
     return (
       <DigitalEmployeeHub
