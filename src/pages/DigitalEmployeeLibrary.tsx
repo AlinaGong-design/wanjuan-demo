@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { employeeStore, EmployeeRecord } from '../store/employeeStore';
-import { Button, Input, Tag, Modal, Select, Badge, Drawer, Table, Divider, message, Steps, Switch, Checkbox, Tooltip } from 'antd';
+import { Button, Input, Tag, Modal, Select, Badge, Drawer, Table, Divider, message, Steps, Switch, Checkbox, Tooltip, Timeline, Space } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import {
   PlusOutlined, EditOutlined, SearchOutlined,
@@ -10,14 +10,23 @@ import {
   CopyOutlined, SendOutlined, BranchesOutlined,
   ThunderboltOutlined, AppstoreOutlined, UnorderedListOutlined,
   MobileOutlined, LinkOutlined, DesktopOutlined,
+  HistoryOutlined, FileTextOutlined, TagOutlined, SaveOutlined, EyeOutlined,
 } from '@ant-design/icons';
 
 // ─── 类型 ─────────────────────────────────────────────────
 type EmployeeStatus = 'draft' | 'testing' | 'published' | 'paused' | 'archived';
 type DeployScope    = 'private' | 'dept' | 'company';
 
+type VisibilityScope = 'private' | 'team' | 'company';
+
 interface EmployeeVersion {
-  versionId: string; version: string; changelog: string; publishedAt: string; publishedBy: string; status: 'active' | 'history';
+  versionId: string; version: string; changelog: string;
+  publishedAt: string; publishedBy: string; scope: VisibilityScope;
+}
+interface EmployeeHistoryEvent {
+  id: string; kind: 'save' | 'publish';
+  time: string; user: string; desc: string;
+  version?: EmployeeVersion;
 }
 
 interface DigitalEmployeeItem {
@@ -37,11 +46,29 @@ const MOCK_EMPLOYEES: DigitalEmployeeItem[] = [
   { id: 'de-007', name: '智能巡检助手', dept: '管道运营部', domain: '管道安全域', description: '整合光纤预警、机器视觉、无人机巡护等多源告警，自动完成预警研判、工单派发与闭环跟踪，覆盖管道安全巡检全流程', status: 'published', version: 'v1.0.0', scope: 'company', updateTime: '2026-03-20', callCount: 2156, score: 4.7, heat: 83, type: '定制款' },
 ];
 
-const MOCK_VERSIONS: EmployeeVersion[] = [
-  { versionId: 'v3', version: 'v2.1.0',   changelog: '优化合同识别准确率，新增风险等级标注',       publishedAt: '2026-03-10 14:30', publishedBy: '张三', status: 'active'  },
-  { versionId: 'v2', version: 'v2.0.1',   changelog: '修复飞书文档权限异常问题',                   publishedAt: '2026-02-28 09:15', publishedBy: '张三', status: 'history' },
-  { versionId: 'v1', version: 'v2.0.0',   changelog: '重构 Prompt 结构，支持多类型合同模板',       publishedAt: '2026-02-15 16:00', publishedBy: '李四', status: 'history' },
+const MOCK_EMPLOYEE_HISTORY: EmployeeHistoryEvent[] = [
+  { id: 'h1', kind: 'publish', time: '2026-02-15 16:00', user: '李四', desc: 'v2.0.0', version: { versionId: 'v2.0.0', version: 'v2.0.0', changelog: '重构 Prompt 结构，支持多类型合同模板', publishedAt: '2026-02-15 16:00', publishedBy: '李四', scope: 'team' } },
+  { id: 'h2', kind: 'save',    time: '2026-02-20 10:30', user: '张三', desc: '优化风险识别提示词' },
+  { id: 'h3', kind: 'publish', time: '2026-02-28 09:15', user: '张三', desc: 'v2.0.1', version: { versionId: 'v2.0.1', version: 'v2.0.1', changelog: '修复飞书文档权限异常问题', publishedAt: '2026-02-28 09:15', publishedBy: '张三', scope: 'team' } },
+  { id: 'h4', kind: 'save',    time: '2026-03-05 14:00', user: '张三', desc: '新增风险等级标注逻辑' },
+  { id: 'h5', kind: 'publish', time: '2026-03-10 14:30', user: '张三', desc: 'v2.1.0', version: { versionId: 'v2.1.0', version: 'v2.1.0', changelog: '优化合同识别准确率，新增风险等级标注', publishedAt: '2026-03-10 14:30', publishedBy: '张三', scope: 'company' } },
 ];
+
+const SCOPE_LABELS: Record<VisibilityScope, { label: string }> = {
+  private: { label: '仅自己' },
+  team:    { label: '团队内' },
+  company: { label: '全公司' },
+};
+
+function nextVersion(ver: string, type: 'patch' | 'minor' | 'major' = 'patch'): string {
+  const match = ver.match(/^v(\d+)\.(\d+)\.(\d+)$/);
+  if (!match) return 'v1.0.0';
+  let [, major, minor, patch] = match.map(Number);
+  if (type === 'patch') patch++;
+  else if (type === 'minor') { minor++; patch = 0; }
+  else { major++; minor = 0; patch = 0; }
+  return `v${major}.${minor}.${patch}`;
+}
 
 const STATUS_CONFIG: Record<EmployeeStatus, { label: string; badgeStatus: 'default' | 'processing' | 'success' | 'warning' | 'error' }> = {
   draft:     { label: '草稿',   badgeStatus: 'default'    },
@@ -68,6 +95,21 @@ const DOMAIN_COLORS: Record<string, string> = {
   '全部': '#6366F1', '法务域': '#6366F1', '人力域': '#10B981',
   '财务域': '#F59E0B', '技术域': '#3B82F6', '客服域': '#EC4899', '运营域': '#8B5CF6', '管道安全域': '#EF4444',
 };
+
+const ORG_TREE = [
+  { id: 'root',    name: '集团总公司',  path: '集团总公司' },
+  { id: 'lead',    name: '集团领导',    path: '集团总公司 > 集团领导' },
+  { id: 'digital', name: '数字智能部',  path: '集团总公司 > 数字智能部' },
+  { id: 'infra',   name: '基础设施部',  path: '集团总公司 > 数字智能部 > 基础设施部' },
+  { id: 'sys',     name: '系统建设部',  path: '集团总公司 > 数字智能部 > 系统建设部' },
+  { id: 'data',    name: '数据治理部',  path: '集团总公司 > 数字智能部 > 数据治理部' },
+  { id: 'legal',   name: '法务部',      path: '集团总公司 > 法务部' },
+  { id: 'hr',      name: '人力资源部',  path: '集团总公司 > 人力资源部' },
+  { id: 'finance', name: '财务部',      path: '集团总公司 > 财务部' },
+  { id: 'tech',    name: '技术部',      path: '集团总公司 > 技术部' },
+  { id: 'ops',     name: '运营部',      path: '集团总公司 > 运营部' },
+  { id: 'pipe',    name: '管道运营部',  path: '集团总公司 > 管道运营部' },
+];
 
 // ─── 工具函数 ──────────────────────────────────────────────
 const AVATAR_COLORS = [
@@ -172,7 +214,7 @@ const STEPS = [
   { title: '基础信息', description: '员工身份与职能' },
   { title: 'AI 能力',  description: '模型、知识与技能' },
   { title: '部署配置', description: '上线渠道与权限'  },
-  { title: '测试发布', description: '调试验证并上线'  },
+  { title: '测试上岗', description: '调试验证并上线'  },
 ];
 
 // ─── 步骤标题组件 ──────────────────────────────────────────
@@ -183,22 +225,848 @@ const SectionTitle: React.FC<{ title: string; desc?: string }> = ({ title, desc 
   </div>
 );
 
+// ─── PromptFilesEditor ────────────────────────────────────────
+
+interface PromptFileDef {
+  name: string;
+  desc: string;
+  defaultContent: string;
+  isMemory?: boolean;
+}
+
+const MOCK_MEMORIES = `# 运行时记忆
+
+> 以下内容由员工在实际运行过程中自动积累，可手动编辑或清理。
+
+## 用户偏好
+- 用户「张总监」偏好结构化输出，喜欢分条列举而非长段落
+- 用户「李经理」经常在下午14:00-16:00发起合同审查请求
+- 多位用户反馈：风险等级标注使用「高/中/低」比数字评分更直观
+
+## 常见问题记录
+- 「劳动合同试用期条款」是询问频率最高的问题（本月28次）
+- 「保密协议模板」请求量较上月增长40%，已建议补充知识库
+
+## 修正记录
+- 2026-03-15：用户纠正「竞业限制期限」表述，最长不超过2年而非1年，已更新认知
+- 2026-03-22：用户指出某供应商合同缺少「争议解决条款」，已加入审查清单`;
+
+const PROMPT_FILES_DEF: PromptFileDef[] = [
+  {
+    name: 'AGENTS.md',
+    desc: '核心角色设定',
+    defaultContent: DEFAULT_PROMPT,
+  },
+  {
+    name: 'SOUL.md',
+    desc: '性格与价值观',
+    defaultContent: `# 性格与价值观
+
+## 性格特征
+- 专业严谨，注重细节
+- 主动积极，响应及时
+- 以用户需求为导向
+
+## 核心价值观
+1. 准确性优先：所有信息须基于可靠数据源，不凭空推断
+2. 保护隐私：严格遵守数据安全与保密规定
+3. 持续学习：主动更新知识库，保持专业能力领先`,
+  },
+  {
+    name: 'MEMORY.md',
+    desc: '运行时记忆',
+    defaultContent: MOCK_MEMORIES,
+    isMemory: true,
+  },
+];
+
+const PromptFilesEditor: React.FC<{
+  initialPrompt: string;
+  onChange: (prompt: string) => void;
+}> = ({ initialPrompt, onChange }) => {
+  const initContents = (): Record<string, string> => {
+    const map: Record<string, string> = {};
+    PROMPT_FILES_DEF.forEach(f => {
+      map[f.name] = f.name === 'AGENTS.md' ? initialPrompt : f.defaultContent;
+    });
+    return map;
+  };
+
+  const [fileContents, setFileContents] = React.useState<Record<string, string>>(initContents);
+  const [selectedFile, setSelectedFile] = React.useState('AGENTS.md');
+  const [editingContent, setEditingContent] = React.useState(initialPrompt);
+
+  // 弹窗状态
+  const [modalOpen, setModalOpen] = React.useState(false);
+  const [modalContent, setModalContent] = React.useState('');
+  const [modalPreview, setModalPreview] = React.useState(false);
+
+  const autoCommit = (fileName: string, content: string) => {
+    const newContents = { ...fileContents, [fileName]: content };
+    setFileContents(newContents);
+    onChange(newContents['AGENTS.md'] || '');
+  };
+
+  const handleSelectFile = (fileName: string) => {
+    autoCommit(selectedFile, editingContent);
+    setSelectedFile(fileName);
+    setEditingContent(fileContents[fileName] ?? PROMPT_FILES_DEF.find(f => f.name === fileName)?.defaultContent ?? '');
+  };
+
+  const handleReset = () => {
+    const def = PROMPT_FILES_DEF.find(f => f.name === selectedFile);
+    if (def) {
+      setEditingContent(def.defaultContent);
+      autoCommit(selectedFile, def.defaultContent);
+    }
+  };
+
+  // 打开弹窗预览/编辑
+  const openModal = () => {
+    setModalContent(editingContent);
+    setModalPreview(false);
+    setModalOpen(true);
+  };
+
+  // 弹窗关闭时自动同步内容
+  const handleModalClose = () => {
+    setEditingContent(modalContent);
+    autoCommit(selectedFile, modalContent);
+    setModalOpen(false);
+  };
+
+  const byteSize = (s: string) => new Blob([s]).size;
+  const currentFileDef = PROMPT_FILES_DEF.find(f => f.name === selectedFile);
+
+  return (
+    <>
+      <div style={{ border: '1px solid #e8e8e8', borderRadius: 10, overflow: 'hidden', background: '#fff' }}>
+        <div style={{ display: 'flex', height: 342 }}>
+
+          {/* ── 左侧文件列表 ── */}
+          <div style={{ width: 176, borderRight: '1px solid #f0f0f0', display: 'flex', flexDirection: 'column', background: '#fafafa', flexShrink: 0 }}>
+            <div style={{ padding: '9px 12px', fontSize: 10, fontWeight: 700, color: '#9CA3AF', borderBottom: '1px solid #f0f0f0', letterSpacing: 0.8 }}>
+              配置文件
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto' }}>
+              {PROMPT_FILES_DEF.map(f => {
+                const isSelected = selectedFile === f.name;
+                const content = fileContents[f.name] ?? f.defaultContent;
+                const size = byteSize(content);
+                return (
+                  <div
+                    key={f.name}
+                    onClick={() => handleSelectFile(f.name)}
+                    style={{
+                      padding: '9px 12px',
+                      cursor: 'pointer',
+                      borderBottom: '1px solid #f3f4f6',
+                      background: isSelected ? '#eff6ff' : 'transparent',
+                      borderLeft: `2px solid ${isSelected ? '#6366F1' : 'transparent'}`,
+                      transition: 'all 0.12s',
+                    }}
+                    onMouseEnter={e => { if (!isSelected) (e.currentTarget as HTMLDivElement).style.background = '#f5f5fa'; }}
+                    onMouseLeave={e => { if (!isSelected) (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 2 }}>
+                      <span style={{ fontSize: 12, fontWeight: isSelected ? 600 : 400, color: isSelected ? '#4338CA' : '#374151', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+                      {f.isMemory && (
+                        <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: '#fef3c7', color: '#D97706', border: '1px solid #fde68a', flexShrink: 0, fontWeight: 600 }}>动态</span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 10, color: '#9CA3AF' }}>{f.desc} · {size} B</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* ── 右侧编辑器 ── */}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+
+            {/* 路径栏 + 操作按钮 */}
+            <div style={{ padding: '7px 12px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 6, background: '#fff', flexShrink: 0 }}>
+              <span style={{ fontSize: 11, color: '#9CA3AF', fontFamily: 'monospace', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                /prompt/{selectedFile}
+              </span>
+              {currentFileDef?.isMemory && (
+                <span style={{ fontSize: 10, color: '#10B981', padding: '1px 6px', borderRadius: 4, background: '#f0fdf4', border: '1px solid #a7f3d0', flexShrink: 0 }}>运行时更新</span>
+              )}
+              <button
+                onClick={openModal}
+                style={{ padding: '3px 9px', borderRadius: 5, border: '1px solid #e8e8e8', background: '#fff', color: '#6B7280', fontSize: 11, cursor: 'pointer', flexShrink: 0 }}
+              >预览</button>
+              <button
+                onClick={handleReset}
+                style={{ padding: '3px 9px', borderRadius: 5, border: '1px solid #e8e8e8', background: '#fff', color: '#6B7280', fontSize: 11, cursor: 'pointer', flexShrink: 0 }}
+              >重置</button>
+            </div>
+
+            {/* Content 标签 */}
+            <div style={{ padding: '5px 12px', fontSize: 11, fontWeight: 600, color: '#6B7280', background: '#f9fafb', borderBottom: '1px solid #f0f0f0', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span>Content</span>
+              {currentFileDef?.isMemory && (
+                <span style={{ fontSize: 10, color: '#9CA3AF', fontWeight: 400 }}>员工运行中自动积累，可手动编辑或清理</span>
+              )}
+            </div>
+
+            {/* 编辑区 */}
+            <div style={{ flex: 1, overflow: 'hidden' }}>
+              <textarea
+                value={editingContent}
+                onChange={e => { setEditingContent(e.target.value); autoCommit(selectedFile, e.target.value); }}
+                style={{ width: '100%', height: '100%', border: 'none', outline: 'none', padding: '10px 14px', fontSize: 12, fontFamily: 'monospace', lineHeight: 1.75, resize: 'none', color: '#374151', background: '#fff', boxSizing: 'border-box' }}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── 预览/编辑 弹窗 ── */}
+      <Modal
+        open={modalOpen}
+        onCancel={handleModalClose}
+        footer={null}
+        width="76vw"
+        centered
+        styles={{ body: { padding: 0 } }}
+        closable={false}
+      >
+        {/* 弹窗头部 */}
+        <div style={{ display: 'flex', alignItems: 'center', padding: '14px 20px', borderBottom: '1px solid #f0f0f0', background: '#fff', gap: 10 }}>
+          <div style={{ display: 'flex', flex: 1, alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a' }}>{selectedFile}</span>
+            <span style={{ fontSize: 11, color: '#9CA3AF', fontFamily: 'monospace' }}>/prompt/{selectedFile}</span>
+            {currentFileDef?.isMemory && (
+              <span style={{ fontSize: 10, color: '#10B981', padding: '1px 6px', borderRadius: 4, background: '#f0fdf4', border: '1px solid #a7f3d0', fontWeight: 600 }}>运行时更新</span>
+            )}
+          </div>
+          {/* 编辑/预览 切换 */}
+          <div style={{ display: 'flex', background: '#F3F4F6', borderRadius: 7, padding: 3, gap: 0 }}>
+            {([{ key: false, label: '编辑' }, { key: true, label: '预览' }] as const).map(tab => (
+              <div
+                key={String(tab.key)}
+                onClick={() => setModalPreview(tab.key)}
+                style={{
+                  padding: '4px 14px', borderRadius: 5, fontSize: 12, cursor: 'pointer', transition: 'all 0.15s',
+                  fontWeight: modalPreview === tab.key ? 600 : 400,
+                  color: modalPreview === tab.key ? '#111' : '#6B7280',
+                  background: modalPreview === tab.key ? '#fff' : 'transparent',
+                  boxShadow: modalPreview === tab.key ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                }}
+              >{tab.label}</div>
+            ))}
+          </div>
+          <div
+            onClick={handleModalClose}
+            style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 6, cursor: 'pointer', color: '#9CA3AF', fontSize: 16 }}
+            onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.background = '#F3F4F6'}
+            onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.background = 'transparent'}
+          >✕</div>
+        </div>
+
+        {/* 弹窗内容区 */}
+        <div style={{ height: '66vh', display: 'flex', flexDirection: 'column' }}>
+          {modalPreview ? (
+            <div style={{ flex: 1, overflowY: 'auto', padding: '20px 28px', fontSize: 13, color: '#374151', lineHeight: 2, whiteSpace: 'pre-wrap', fontFamily: 'inherit', background: '#fafafa' }}>
+              {modalContent || <span style={{ color: '#bbb' }}>（空文件）</span>}
+            </div>
+          ) : (
+            <textarea
+              value={modalContent}
+              onChange={e => { setModalContent(e.target.value); setEditingContent(e.target.value); autoCommit(selectedFile, e.target.value); }}
+              autoFocus
+              style={{ flex: 1, border: 'none', outline: 'none', padding: '20px 28px', fontSize: 13, fontFamily: 'monospace', lineHeight: 1.85, resize: 'none', color: '#374151', background: '#fff', boxSizing: 'border-box' }}
+            />
+          )}
+        </div>
+      </Modal>
+    </>
+  );
+};
+
+// ─── 通用资源选择器组件 ───────────────────────────────────
+
+interface PickerItem {
+  id: string;
+  icon: React.ReactNode | string;
+  name: string;
+  desc: string;
+  tag?: string;
+  tagColor?: string;
+  tagBg?: string;
+  tagBorder?: string;
+}
+
+const PickerSection: React.FC<{
+  title: string;
+  desc?: string;
+  modalTitle: string;
+  items: PickerItem[];
+  selectedIds: string[];
+  onAdd: (id: string) => void;
+  onRemove: (id: string) => void;
+  accentColor?: string;
+  linkText?: string;
+  onLink?: () => void;
+}> = ({ title, desc, modalTitle, items, selectedIds, onAdd, onRemove, accentColor = '#6366F1', linkText, onLink }) => {
+  const [modalOpen, setModalOpen] = useState(false);
+  const [search, setSearch]       = useState('');
+
+  const selectedItems   = items.filter(i => selectedIds.includes(i.id));
+  const availableItems  = items.filter(i => !selectedIds.includes(i.id)).filter(i =>
+    !search.trim() || i.name.includes(search.trim()) || i.desc.includes(search.trim())
+  );
+
+  return (
+    <div>
+      {/* 表头行 */}
+      <div style={{ marginBottom: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>{title}</span>
+          <button
+            onClick={() => { setSearch(''); setModalOpen(true); }}
+            style={{ width: 24, height: 24, borderRadius: 6, border: `1px solid ${accentColor}40`, background: `${accentColor}08`, color: accentColor, fontSize: 16, lineHeight: '22px', textAlign: 'center', cursor: 'pointer', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+          >＋</button>
+        </div>
+        {desc && <div style={{ fontSize: 12, color: '#999', marginTop: 2 }}>{desc}</div>}
+      </div>
+
+      {/* 已添加列表 */}
+      {selectedItems.length === 0 ? (
+        <div style={{ padding: '11px 14px', border: '1px dashed #e8e8e8', borderRadius: 8, fontSize: 12, color: '#bbb', textAlign: 'center' }}>
+          暂未添加，点击 ＋ 从列表中选择
+        </div>
+      ) : (
+        <div style={{ border: '1px solid #f0f0f0', borderRadius: 10, overflow: 'hidden' }}>
+          {selectedItems.map((item, idx) => (
+            <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', borderBottom: idx < selectedItems.length - 1 ? '1px solid #f5f5f5' : 'none', background: '#fff' }}>
+              <span style={{ fontSize: 16, flexShrink: 0 }}>{item.icon}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 12, fontWeight: 500, color: '#1a1a1a' }}>{item.name}</span>
+                  {item.tag && (
+                    <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 4, color: item.tagColor ?? accentColor, background: item.tagBg ?? `${accentColor}10`, border: `1px solid ${item.tagBorder ?? `${accentColor}30`}` }}>{item.tag}</span>
+                  )}
+                </div>
+                <div style={{ fontSize: 11, color: '#bbb', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.desc}</div>
+              </div>
+              <button
+                onClick={() => onRemove(item.id)}
+                style={{ width: 22, height: 22, borderRadius: 5, border: '1px solid #f0f0f0', background: '#fafafa', color: '#aaa', fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, flexShrink: 0, lineHeight: 1 }}
+                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = '#ff4d4f'; (e.currentTarget as HTMLButtonElement).style.color = '#ff4d4f'; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = '#f0f0f0'; (e.currentTarget as HTMLButtonElement).style.color = '#aaa'; }}
+              >×</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+
+      {/* 选择弹窗 */}
+      <Modal
+        open={modalOpen}
+        onCancel={() => setModalOpen(false)}
+        footer={null}
+        title={<span style={{ fontSize: 14, fontWeight: 700 }}>{modalTitle}</span>}
+        width={520}
+        centered
+        styles={{ body: { padding: '12px 20px 20px' } }}
+      >
+        {/* 搜索框 */}
+        <Input
+          prefix={<SearchOutlined style={{ color: '#bbb' }} />}
+          placeholder="搜索名称或描述..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          style={{ marginBottom: 12, borderRadius: 8 }}
+          allowClear
+        />
+
+        {/* 可选列表 */}
+        {availableItems.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '24px 0', color: '#bbb', fontSize: 13 }}>
+            {search.trim() ? '未找到匹配项' : '全部已添加 ✓'}
+          </div>
+        ) : (
+          <div style={{ border: '1px solid #f0f0f0', borderRadius: 10, overflow: 'hidden', maxHeight: 360, overflowY: 'auto' }}>
+            {availableItems.map((item, idx) => (
+              <div
+                key={item.id}
+                onClick={() => { onAdd(item.id); }}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderBottom: idx < availableItems.length - 1 ? '1px solid #f5f5f5' : 'none', cursor: 'pointer', transition: 'background 0.12s' }}
+                onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.background = `${accentColor}06`}
+                onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.background = 'transparent'}
+              >
+                <span style={{ fontSize: 18, flexShrink: 0 }}>{item.icon}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 1 }}>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: '#1a1a1a' }}>{item.name}</span>
+                    {item.tag && (
+                      <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 4, color: item.tagColor ?? accentColor, background: item.tagBg ?? `${accentColor}10`, border: `1px solid ${item.tagBorder ?? `${accentColor}30`}` }}>{item.tag}</span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#999' }}>{item.desc}</div>
+                </div>
+                <span style={{ fontSize: 20, color: accentColor, fontWeight: 300, flexShrink: 0 }}>＋</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* 底部：已添加数量 + 跳转新建 */}
+        <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          {onLink ? (
+            <span
+              onClick={() => { setModalOpen(false); onLink(); }}
+              style={{ fontSize: 12, color: accentColor, cursor: 'pointer', fontWeight: 500 }}
+              onMouseEnter={e => (e.currentTarget as HTMLSpanElement).style.textDecoration = 'underline'}
+              onMouseLeave={e => (e.currentTarget as HTMLSpanElement).style.textDecoration = 'none'}
+            >{linkText}</span>
+          ) : <span />}
+          {selectedItems.length > 0 && (
+            <span style={{ fontSize: 11, color: '#bbb' }}>已添加 {selectedItems.length} 项</span>
+          )}
+        </div>
+      </Modal>
+    </div>
+  );
+};
+
 // ─── 全页向导（创建 / 编辑） ──────────────────────────────
 interface TestMessage { role: 'user' | 'ai'; content: string; }
 
 const EmployeeConfigPage: React.FC<{
   onClose: () => void;
   onBack?: () => void;
+  onPublish?: (name: string) => void;
   initialData?: Partial<WizardData>;
   isEdit?: boolean;
-}> = ({ onClose, onBack, initialData, isEdit }) => {
+  readOnly?: boolean;
+  readOnlyVersion?: string;
+  onViewVersion?: (version: EmployeeVersion) => void;
+}> = ({ onClose, onBack, onPublish, initialData, isEdit, readOnly, readOnlyVersion, onViewVersion }) => {
   const [data, setData] = useState<WizardData>({ ...initWizardData(), ...initialData });
   const [stepAvatarUrl, setStepAvatarUrl] = useState<string | null>(null);
   const [stepAiDescLoading, setStepAiDescLoading] = useState(false);
   const [autoSaved, setAutoSaved] = useState(false);
+  const [empPublishOpen, setEmpPublishOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [inlineRollbackTarget, setInlineRollbackTarget] = useState<EmployeeVersion | null>(null);
   const stepAvatarRef = React.useRef<HTMLInputElement>(null);
   const update = (patch: Partial<WizardData>) => setData(prev => ({ ...prev, ...patch }));
 
+  // 对话式配置状态
+  interface ChatMsg { role: 'user' | 'ai'; content: string; }
+  const [chatMsgs, setChatMsgs] = useState<ChatMsg[]>([
+    { role: 'ai', content: '你好！你可以直接告诉我需要调整的内容，例如「把名字改为法务助手」、「描述改为负责合同审查」、「切换到国产安全模型」，我会同步更新左侧配置。' },
+  ]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
+
+  // 任务列表：记录右侧调试时发送的任务，实时同步到左侧
+  interface DebugTaskStep {
+    id: string; name: string; desc: string;
+    status: 'done' | 'running' | 'waiting';
+    time?: string; output?: string;
+  }
+  interface DebugPipeStage {
+    id: string; label: string; icon: string; type?: 'auto' | 'human';
+    desc: string; logs: Array<{ text: string; kind: 'ok' | 'warn' | 'data' | 'info' }>;
+  }
+  interface DebugTask {
+    id: number; title: string; content: string; time: string;
+    status: 'running' | 'done' | 'human_pending';
+    pipeStages: DebugPipeStage[];
+    doneCount: number;
+    steps: DebugTaskStep[];
+    logs: Array<{ text: string; kind: string; ts: string }>;
+    expanded: boolean;
+    humanOk?: boolean;
+    clarifyInput?: string;
+    clarifyMode?: boolean;
+    aiReply?: string;
+  }
+  const [tasks, setTasks] = useState<DebugTask[]>([]);
+  const chatEndRef = React.useRef<HTMLDivElement>(null);
+  const chatFileRef = React.useRef<HTMLInputElement>(null);
+
+  React.useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMsgs]);
+
+  // 判断输入是否在员工职责范围内
+  const isInScope = (text: string): boolean => {
+    const scopeSources = [data.domain, data.dept, data.role, data.description, data.name]
+      .filter(Boolean).join('');
+
+    // 员工尚未配置职责信息，放行所有输入
+    if (!scopeSources.trim()) return true;
+
+    // 提取所有相邻2字双元组（bigram），覆盖「合同」「审查」「法务」等短词
+    const bigrams = new Set<string>();
+    for (let i = 0; i < scopeSources.length - 1; i++) {
+      const a = scopeSources[i], b = scopeSources[i + 1];
+      if (/[\u4e00-\u9fa5]/.test(a) && /[\u4e00-\u9fa5]/.test(b)) {
+        bigrams.add(a + b);
+      }
+    }
+
+    // 命中任意双元组即视为在职责范围内
+    return Array.from(bigrams).some(bg => text.includes(bg));
+  };
+
+  const handleChatSend = () => {
+    const text = chatInput.trim();
+    if (!text || chatLoading) return;
+    setChatInput('');
+    setChatMsgs(prev => [...prev, { role: 'user', content: text }]);
+    setChatLoading(true);
+
+    // 职责范围过滤：不在范围内只回复，不创建任务
+    if (!isInScope(text)) {
+      const empName = data.name || '当前员工';
+      const scopeDesc = [data.domain, data.dept, data.role].filter(Boolean).join('、') || '已配置职责范围';
+      setTimeout(() => {
+        setChatMsgs(prev => [...prev, {
+          role: 'ai',
+          content: `您好，您的指令「${text.slice(0, 20)}${text.length > 20 ? '…' : ''}」超出了「${empName}」的职责范围。\n\n我的服务范围：${scopeDesc}。\n\n如需处理此类事项，建议联系对应的专职员工或人工团队。`,
+        }]);
+        setChatLoading(false);
+      }, 600);
+      return;
+    }
+
+    const taskId = Date.now();
+    const getTs = () => new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const taskTime = getTs();
+
+    // 根据业务域生成真实任务配置
+    const domain = data.domain || '';
+    const isLaw     = /法务/.test(domain);
+    const isHR      = /人力/.test(domain);
+    const isFinance  = /财务/.test(domain);
+    const isTech    = /技术/.test(domain);
+    const isCS      = /客服/.test(domain);
+    const isPipe    = /管道|安全/.test(domain);
+
+    type LogKind = 'ok' | 'warn' | 'data' | 'info';
+    interface DomainTaskConfig {
+      planDesc: string; execDesc: string;
+      planLogs: Array<{ text: string; kind: LogKind }>;
+      execLogs: Array<{ text: string; kind: LogKind }>;
+      verifyLogs: Array<{ text: string; kind: LogKind }>;
+      steps: Array<{ name: string; desc: string }>;
+      advanceLogs: [string, string, string];
+      aiReply: string;
+    }
+
+    const taskConfig: DomainTaskConfig = isLaw ? {
+      planDesc: '解析合同文本，制定审查清单与风险检测策略',
+      execDesc: '调用 PDF 解析引擎提取条款，匹配合规规则库',
+      planLogs: [
+        { text: '提取任务关键词：合同审查 / 风险识别 / 条款分析', kind: 'data' },
+        { text: '加载法务合规规则库 v3.2.1', kind: 'info' },
+        { text: '执行计划生成完毕，共 4 个子步骤', kind: 'ok' },
+      ],
+      execLogs: [
+        { text: 'PDF 解析引擎启动，提取全文结构...', kind: 'info' },
+        { text: '共识别 23 个条款段落，12,340 字', kind: 'data' },
+        { text: '命中合规规则 47 条，完成条款交叉映射', kind: 'data' },
+        { text: '识别到 2 处高风险条款：违约责任上限 / 单方解约权', kind: 'warn' },
+        { text: '风险等级标注完成，结构化审查报告已生成', kind: 'ok' },
+      ],
+      verifyLogs: [
+        { text: '法律条文引用校验通过（民法典第 502 条）', kind: 'ok' },
+        { text: '风险等级评定符合内部法务标准', kind: 'ok' },
+      ],
+      steps: [
+        { name: '文档解析', desc: '调用 PDF 解析引擎提取全文结构与条款段落' },
+        { name: '合规规则匹配', desc: '逐条检索法律法规库，完成条款交叉映射' },
+        { name: '风险识别', desc: 'AI 分析高风险语义模式，标注异常条款' },
+        { name: '报告生成', desc: '生成结构化审查报告，推送至飞书文档' },
+      ],
+      advanceLogs: ['✓ 文档解析完成，提取 23 个条款段落', '✓ 合规规则匹配完成，发现 2 处高风险', '✓ 审查报告已生成，含风险标注与修改建议'],
+      aiReply: `合同审查完成，发现以下风险：\n\n**高风险（2项）**\n• 第8条「违约责任上限」：赔偿上限过低，建议参考合同总金额的 30%\n• 第12条「单方解约权」：乙方可无条件解约，建议增加限制条件\n\n报告已推送至飞书文档，请法务负责人确认后签署。`,
+    } : isHR ? {
+      planDesc: '解析岗位需求，制定简历筛选与候选人评估策略',
+      execDesc: '调用简历解析模型，匹配岗位要求，生成候选人评分',
+      planLogs: [
+        { text: '提取任务关键词：简历筛选 / 岗位匹配 / 候选人评估', kind: 'data' },
+        { text: '加载岗位 JD 与历史录用数据模型', kind: 'info' },
+        { text: '执行计划生成完毕，共 4 个子步���', kind: 'ok' },
+      ],
+      execLogs: [
+        { text: '解析本批次简历，共 38 份...', kind: 'info' },
+        { text: '提取候选人技能标签：Python / 数据分析 / 3年以上经验', kind: 'data' },
+        { text: '与岗位 JD 匹配打分，TOP5 候选人已筛出', kind: 'ok' },
+        { text: '匹配度最高：候选人张**（92分）/ 李**（88分）', kind: 'data' },
+      ],
+      verifyLogs: [
+        { text: '筛选结果符合岗位要求，无明显异常项', kind: 'ok' },
+        { text: '已去除重复投递候选人 3 名', kind: 'info' },
+      ],
+      steps: [
+        { name: '简历解析', desc: '批量解析简历文件，提取结构化信息' },
+        { name: '岗位匹配', desc: '与 JD 要求交叉比对，生成匹配评分' },
+        { name: '候选人排序', desc: '综合打分排序，筛出 TOP 候选名单' },
+        { name: '面试通知', desc: '自动发送面试邀请并协调飞书日历时间' },
+      ],
+      advanceLogs: ['✓ 简历解析完成，共处理 38 份', '✓ 岗位匹配完成，TOP5 候选人已筛出', '✓ 面试邀请已生成，等待确认后发送'],
+      aiReply: `简历筛选完成，共处理 38 份，推荐以下候选人：\n\n**TOP 候选人**\n• 张**（92分）：5年数据分析经验，Python/SQL 熟练\n• 李**（88分）：3年相关经验，有大厂背景\n• 王**（85分）：应届硕士，项目经验丰富\n\n面试邀请草稿已生成，确认后可一键发送并同步飞书日历。`,
+    } : isFinance ? {
+      planDesc: '拉取业务数据，制定财务报表分析与异常检测策略',
+      execDesc: '连接 ERP 数据源，执行多维度财务指标计算与异常检测',
+      planLogs: [
+        { text: '提取任务关键词：财务报表 / 数据分析 / 异常预警', kind: 'data' },
+        { text: '连接企业 ERP 数据源，验证权限...', kind: 'info' },
+        { text: '执行计划生成完毕，共 4 个子步骤', kind: 'ok' },
+      ],
+      execLogs: [
+        { text: '拉取本月业务数据，共 12 个业务线...', kind: 'info' },
+        { text: '营收同比增长 18.3%，环比增长 5.1%', kind: 'data' },
+        { text: '⚠️ 异常检测：研发成本超预算 23%', kind: 'warn' },
+        { text: '毛利率 42.1%，同比下降 2.3 个百分点', kind: 'data' },
+        { text: '财务分析报告生成完毕', kind: 'ok' },
+      ],
+      verifyLogs: [
+        { text: '数据口径与上期保持一致，无异常', kind: 'ok' },
+        { text: '⚠️ 预算超支项已标注，需人工复核确认', kind: 'warn' },
+      ],
+      steps: [
+        { name: '数据拉取', desc: '从 ERP / 数据仓库同步最新财务数据' },
+        { name: '指标计算', desc: '计算营收、成本、利润等核心财务指标' },
+        { name: '异常检测', desc: 'AI 识别预算偏差与异常波动项' },
+        { name: '报告生成', desc: '生成图文报告并推送至钉钉 / 飞书' },
+      ],
+      advanceLogs: ['✓ 数据拉取完成，12 个业务线已同步', '✓ 指标计算完成，发现 1 项预算异常', '✓ 财务分析报告已生成，含异常预警标注'],
+      aiReply: `本月财务报表分析完成：\n\n**核心指标**\n• 营收：¥3,842万（同比+18.3%，环比+5.1%）\n• 毛利率：42.1%（同比↓2.3pp）\n\n**⚠️ 异常预警**：研发成本超预算 23%，建议控制本月新增采购\n\n报告已推送至财务负责人飞书，超预算项已触发审批流程。`,
+    } : isTech ? {
+      planDesc: '获取代码变更内容，制定审查规则与安全扫描策略',
+      execDesc: '调用静态分析引擎，执行代码质量与安全漏洞扫描',
+      planLogs: [
+        { text: '提取任务关键词：代码审查 / 安全扫描 / PR 分析', kind: 'data' },
+        { text: '拉取 GitLab PR #1024 变更文件列表...', kind: 'info' },
+        { text: '执行计划生成完毕，共 4 个子步骤', kind: 'ok' },
+      ],
+      execLogs: [
+        { text: '解析 PR 差异：8 个文件，+342/-87 行', kind: 'data' },
+        { text: '执行静态代码分析...', kind: 'info' },
+        { text: '⚠️ 发现潜在 SQL 注入风险：auth/login.py L89', kind: 'warn' },
+        { text: '代码规范：3 处命名不规范，2 处注释缺失', kind: 'data' },
+        { text: '安全扫描完成，审查建议已生成', kind: 'ok' },
+      ],
+      verifyLogs: [
+        { text: 'SQL 注入风险已确认，严重等级：高', kind: 'warn' },
+        { text: '审查建议格式符合团队规范', kind: 'ok' },
+      ],
+      steps: [
+        { name: '代码获取', desc: '拉取 GitLab/GitHub PR 变更文件内容' },
+        { name: '静态分析', desc: '执行代码质量与规范性检查' },
+        { name: '安全扫描', desc: 'AI 识别 SQL 注入、XSS 等安全漏洞' },
+        { name: '评论写入', desc: '将审查建议以评论形式写回 PR' },
+      ],
+      advanceLogs: ['✓ PR 代码获取完成，8 个文件已解析', '✓ 静态分析完成，发现 1 个高风险安全问题', '✓ 审查评论已写入 PR，等待开发者响应'],
+      aiReply: `PR #1024 代码审查完成：\n\n**安全问题（高优先级）**\n• ⚠️ auth/login.py L89：SQL 注入风险，建议使用参数化查询\n\n**代码规范**\n• 3 处变量命名不符合 snake_case 规范\n• utils/helper.py 缺少函数注释\n\n审查评论已写入 PR，请开发者优先修复 SQL 注入问题后重新提交。`,
+    } : isCS ? {
+      planDesc: '识别用户意图，匹配知识库解决方案，制定服务策略',
+      execDesc: '多轮对话意图理解，检索产品知识库，生成回复方案',
+      planLogs: [
+        { text: '提取任务关键词：客户服务 / 意图识别 / 问题解决', kind: 'data' },
+        { text: '加载产品知识库（FAQ v2.3，共 1,240 条）', kind: 'info' },
+        { text: '执行计划生成完毕，共 4 个子步骤', kind: 'ok' },
+      ],
+      execLogs: [
+        { text: '用户意图识别：产品功能咨询', kind: 'data' },
+        { text: '检索知识库，命中相关条目 3 条', kind: 'info' },
+        { text: '生成回复方案，置信度 94%', kind: 'ok' },
+        { text: '创建服务工单 #TK-20240315-001', kind: 'data' },
+      ],
+      verifyLogs: [
+        { text: '回复内容符合服务话术规范', kind: 'ok' },
+        { text: '工单信息完整，已关联用户账号', kind: 'ok' },
+      ],
+      steps: [
+        { name: '意图识别', desc: '多轮理解用户问题，提取核心诉求' },
+        { name: '知识库检索', desc: '匹配 FAQ 与产品手册，生成解决方案' },
+        { name: '回复生成', desc: '按服务话术规范生成结构化回复' },
+        { name: '工单创建', desc: '自动创建服务工单并推送至责任团队' },
+      ],
+      advanceLogs: ['✓ 意图识别完成：产品功能咨询', '✓ 知识库检索命中 3 条相关内容', '✓ 回复方案已生成，工单 #TK-001 已创建'],
+      aiReply: `客户问题已处理：\n\n**问题类型**：产品功能咨询\n**解决方案**：已提供操作指引，附帮助文档链接\n\n**工单**：#TK-20240315-001（已解决，等待用户确认）\n满意度回访将在 24h 后自动触发。`,
+    } : isPipe ? {
+      planDesc: '接收多源告警信号，制定预警研判与巡检处置策略',
+      execDesc: '整合光纤预警、机器视觉、无人机数据，执行异常综合研判',
+      planLogs: [
+        { text: '提取任务关键词：管道巡检 / 预警研判 / 工单派发', kind: 'data' },
+        { text: '接入光纤预警、机器视觉平台、无人机数据流', kind: 'info' },
+        { text: '执行计划生成完毕，共 4 个子步骤', kind: 'ok' },
+      ],
+      execLogs: [
+        { text: '光纤预警：桩号 K125+300 振动异常，持续 4.2s', kind: 'warn' },
+        { text: '机器视觉：对应位置图像分析中...', kind: 'info' },
+        { text: '图像确认：施工车辆进入管道保护区', kind: 'warn' },
+        { text: '无人机数据：管道外观未见明显损伤', kind: 'data' },
+        { text: '综合研判：二级预警，需派员现场确认', kind: 'ok' },
+      ],
+      verifyLogs: [
+        { text: '预警等级研判：二级（较高风险），触发人工复核', kind: 'warn' },
+        { text: '工单信息完整，责任班组已匹配', kind: 'ok' },
+      ],
+      steps: [
+        { name: '告警接收', desc: '汇聚光纤预警、机器视觉、无人机多源数据' },
+        { name: '预警研判', desc: 'AI 综合研判告警等级与风险类型' },
+        { name: '工单派发', desc: '生成巡检工单，自动派发给就近班组' },
+        { name: '闭环跟踪', desc: '实时跟踪处置进度，确认隐患消除' },
+      ],
+      advanceLogs: ['✓ 多源告警数据接收完成，发现 1 处异常', '✓ 预警研判完成：二级预警，施工车辆侵入保护区', '✓ 巡检工单 #WO-0315-042 已派发至管道班组'],
+      aiReply: `管道巡检预警已处理：\n\n**预警信息**\n• 位置：K125+300\n• 类型：第三方施工侵入保护区\n• 等级：⚠️ 二级预警\n\n**已执行**：工单 #WO-0315-042 已派发，班组预计 20 分钟到达，实时监控已开启。\n\n请确认处置情况后完成工单闭环。`,
+    } : {
+      planDesc: '采集运营数据，制定报告生成与推送策略',
+      execDesc: '聚合多维运营指标，AI 生成可视化分析报告',
+      planLogs: [
+        { text: '提取任务关键词：运营数据 / 报告生成 / 指标分析', kind: 'data' },
+        { text: '连接数据仓库，加载运营指标模型', kind: 'info' },
+        { text: '执行计划生成完毕，共 4 个子步骤', kind: 'ok' },
+      ],
+      execLogs: [
+        { text: '拉取本周运营核心指标...', kind: 'info' },
+        { text: 'DAU: 12.4万（环比+8.2%），留存率 62%', kind: 'data' },
+        { text: '转化率：3.7%（较上周+0.5pp）', kind: 'data' },
+        { text: '运营周报生成完毕', kind: 'ok' },
+      ],
+      verifyLogs: [
+        { text: '数据与数据仓库一致，无异常', kind: 'ok' },
+        { text: '报告格式符合运营规范', kind: 'ok' },
+      ],
+      steps: [
+        { name: '数据采集', desc: '从数据仓库同步 DAU、转化率等核心指标' },
+        { name: '指标汇总', desc: '多维度聚合，计算同比环比变化' },
+        { name: '趋势分析', desc: 'AI 识别异常波动与增长机会' },
+        { name: '报告推送', desc: '生成周报并推送至钉钉 / 飞书群' },
+      ],
+      advanceLogs: ['✓ 数据采集完成，覆盖 8 个核心指标', '✓ 指标汇总完成，转化率明显提升', '✓ 运营周报已生成，等待确认后推送'],
+      aiReply: `本周运营数据分析完成：\n\n**核心指标**\n• DAU：12.4万（环比+8.2%）✅\n• 留存率：62%（持平）\n• 转化率：3.7%（+0.5pp）✅\n\n转化率连续 3 周提升，与上周活动推送相关。\n运营周报已就绪，确认后一键推送至运营群。`,
+    };
+
+    // 业务流程管道节点
+    const pipeStages: DebugPipeStage[] = [
+      { id: 'recv', label: '接收任务', icon: '📥', desc: '员工接收用户指令，解析意图',
+        logs: [
+          { text: `[用户] 下达任务：「${text.slice(0, 30)}${text.length > 30 ? '…' : ''}」`, kind: 'info' },
+          { text: `员工「${data.name || '数字员工'}」已接单，初始化任务上下文`, kind: 'ok' },
+          { text: `任务 ID: TASK-${taskId.toString().slice(-6)} 已创建`, kind: 'data' },
+        ],
+      },
+      { id: 'plan', label: '规划拆解', icon: '🧠', desc: taskConfig.planDesc,
+        logs: taskConfig.planLogs,
+      },
+      { id: 'exec', label: '执行处理', icon: '⚙️', desc: taskConfig.execDesc,
+        logs: taskConfig.execLogs,
+      },
+      { id: 'verify', label: '结果验证', icon: '✅', desc: '校验执行结果，确认符合业务逻辑',
+        logs: taskConfig.verifyLogs,
+      },
+      { id: 'human', label: '人工复核', icon: '👤', type: 'human' as const, desc: '等待人工确认执行结果，确认后继续推进',
+        logs: [
+          { text: '⚠️ 执行结果已就绪，等待人工复核', kind: 'warn' },
+          { text: '已暂停自动推进，等待用户确认或澄清', kind: 'info' },
+        ],
+      },
+      { id: 'reply', label: '反馈输出', icon: '💬', desc: '将执行结果反馈给用户',
+        logs: [
+          { text: '生成结构化回复内容', kind: 'info' },
+          { text: '任务执行完成，结果已推送', kind: 'ok' },
+        ],
+      },
+    ];
+
+    // 业务域步骤时间线
+    const initSteps: DebugTaskStep[] = taskConfig.steps.map((s, i) => ({
+      id: `s${i + 1}`, name: s.name, desc: s.desc,
+      status: (i === 0 ? 'running' : 'waiting') as 'running' | 'waiting',
+      time: i === 0 ? taskTime : undefined,
+    }));
+
+    const newTask: DebugTask = {
+      id: taskId, title: text.length > 24 ? text.slice(0, 24) + '…' : text,
+      content: text, time: taskTime, status: 'running',
+      pipeStages, doneCount: 0,
+      steps: initSteps,
+      logs: [{ text: `[${taskTime}] 任务已接收，开始处理...`, kind: 'info', ts: taskTime }],
+      expanded: true,
+      aiReply: taskConfig.aiReply,
+    };
+    setTasks(prev => [...prev, newTask]);
+
+    // 逐步推进管道和步骤（每阶段间隔）
+    const advance = (delay: number, doneCount: number, stepIdx: number, extraLog: string, logKind: string, stepUpdates?: Partial<DebugTaskStep>[]) => {
+      setTimeout(() => {
+        setTasks(prev => prev.map(t => {
+          if (t.id !== taskId) return t;
+          const ts = getTs();
+          const newSteps = t.steps.map((s, i) => {
+            if (stepUpdates && stepUpdates[i]) return { ...s, ...stepUpdates[i], time: stepUpdates[i].status === 'running' || stepUpdates[i].status === 'done' ? ts : s.time };
+            return s;
+          });
+          return {
+            ...t, doneCount,
+            steps: newSteps,
+            logs: [...t.logs, { text: extraLog, kind: logKind, ts }],
+          };
+        }));
+      }, delay);
+    };
+
+    advance(250, 1, 0, taskConfig.advanceLogs[0], 'ok',
+      [{ status: 'done' }, { status: 'running' }, { status: 'waiting' }, { status: 'waiting' }]);
+    advance(550, 2, 1, taskConfig.advanceLogs[1], 'data',
+      [{ status: 'done' }, { status: 'done' }, { status: 'running' }, { status: 'waiting' }]);
+    advance(900, 3, 2, taskConfig.advanceLogs[2], 'ok',
+      [{ status: 'done' }, { status: 'done' }, { status: 'done' }, { status: 'running' }]);
+
+    // 到达人工复核节点：停住，等待用户操作
+    setTimeout(() => {
+      const ts = getTs();
+      setTasks(prev => prev.map(t => t.id !== taskId ? t : {
+        ...t,
+        status: 'human_pending',
+        doneCount: 4, // verify 完成，停在 human 节点
+        steps: t.steps.map(s => ({ ...s, status: 'done' as const, time: s.time || ts })),
+        logs: [...t.logs,
+          { text: '⚠️ 执行结果已就绪，等待人工复核确认', kind: 'warn', ts },
+          { text: '● 任务已暂停，请在左侧点击「确认通过」或发送澄清意见', kind: 'info', ts },
+        ],
+        humanOk: false,
+        clarifyMode: false,
+        clarifyInput: '',
+      }));
+      setChatLoading(false);
+    }, 1000);
+  };
+
+  // 人工确认通过或澄清后继续执行
+  const handleHumanApprove = (taskId: number, clarifyText?: string) => {
+    const ts = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    setTasks(prev => prev.map(t => {
+      if (t.id !== taskId) return t;
+      // 用任务预设的业务回复，若有澄清意见则追加
+      const replyText = t.aiReply || `收到确认！「${t.title}」任务已完成。`;
+      setChatMsgs(prev => [...prev, {
+        role: 'ai',
+        content: clarifyText ? `收到澄清意见：「${clarifyText}」\n\n${replyText}` : replyText,
+      }]);
+      return {
+        ...t, status: 'done' as const, doneCount: t.pipeStages.length,
+        humanOk: true, clarifyMode: false, clarifyInput: '',
+        logs: [...t.logs,
+          ...(clarifyText ? [{ text: `💬 澄清意见：「${clarifyText}」已记录`, kind: 'data', ts }] : []),
+          { text: '✅ 人工复核通过，继续执行', kind: 'ok', ts },
+          { text: '✓ 任务执行完成，结果已反馈给用户', kind: 'ok', ts },
+        ],
+      };
+    }));
+  };
   // 自动保存
   useEffect(() => {
     setAutoSaved(false);
@@ -226,6 +1094,7 @@ const EmployeeConfigPage: React.FC<{
   // ── 全页布局 ──
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: '#f5f6fa', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
       {/* 顶部栏 */}
       <div style={{ height: 56, background: '#fff', borderBottom: '1px solid #e8e8f0', display: 'flex', alignItems: 'center', padding: '0 24px', gap: 16, flexShrink: 0, boxShadow: '0 1px 6px rgba(0,0,0,0.05)' }}>
@@ -245,20 +1114,33 @@ const EmployeeConfigPage: React.FC<{
               <div style={{ fontSize: 11, color: '#aaa', lineHeight: 1.2 }}>{data.dept || '未选择部门'}</div>
             </div>
           </div>
+          {readOnly && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 10px', borderRadius: 6, background: '#fff7ed', border: '1px solid #fed7aa' }}>
+              <EyeOutlined style={{ color: '#ea580c', fontSize: 12 }} />
+              <span style={{ fontSize: 12, color: '#ea580c', fontWeight: 500 }}>只读 · {readOnlyVersion}</span>
+            </div>
+          )}
         </div>
 
-        {/* 右：自动保存 + 发布 */}
+        {/* 右：自动保存 + 历史版本 + 上岗 */}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
-          {autoSaved && (
+          {!readOnly && autoSaved && (
             <span style={{ fontSize: 11, color: '#10B981', display: 'flex', alignItems: 'center', gap: 4 }}>
               <CheckCircleOutlined style={{ fontSize: 11 }} /> 已自动保存
             </span>
           )}
-          <Button type="primary" icon={<CheckCircleOutlined />}
-            style={{ background: '#6366F1', borderColor: '#6366F1', borderRadius: 8, fontWeight: 600 }}
-            onClick={() => { onClose(); message.success(`数字员工「${data.name || '新员工'}」已发布`); }}>
-            发布
-          </Button>
+          {(isEdit || readOnly) && (
+            <Button icon={<HistoryOutlined />} onClick={() => setHistoryOpen(true)} style={{ borderRadius: 8 }}>
+              历史版本
+            </Button>
+          )}
+          {!readOnly && (
+            <Button type="primary" icon={<CheckCircleOutlined />}
+              style={{ background: '#6366F1', borderColor: '#6366F1', borderRadius: 8, fontWeight: 600 }}
+              onClick={() => setEmpPublishOpen(true)}>
+              上岗
+            </Button>
+          )}
         </div>
       </div>
 
@@ -290,154 +1172,127 @@ const EmployeeConfigPage: React.FC<{
                 </div>
               </div>
 
-              {/* ── 角色提示词 ── */}
+              {/* ── 核心文件 ── */}
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>角色提示词 <span style={{ color: '#ff4d4f', fontSize: 11 }}>*</span></span>
-                  <Button type="link" size="small" style={{ padding: 0, fontSize: 12, color: '#6366F1' }} onClick={() => update({ prompt: DEFAULT_PROMPT })}>重置模板</Button>
+                <div style={{ marginBottom: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center' }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>核心文件 <span style={{ color: '#ff4d4f', fontSize: 11 }}>*</span></span>
+                  </div>
+                  <div style={{ fontSize: 12, color: '#999', marginTop: 2 }}>定义该员工的角色身份、行为规范与回复风格</div>
                 </div>
-                <Input.TextArea value={data.prompt} onChange={e => update({ prompt: e.target.value })} rows={7} style={{ borderRadius: 8, fontFamily: 'monospace', fontSize: 12, resize: 'none' }} />
+                <PromptFilesEditor
+                  initialPrompt={data.prompt}
+                  onChange={prompt => update({ prompt })}
+                />
               </div>
 
               {/* ── 知识库 ── */}
-              <div>
-                <SectionTitle title="知识库" desc="员工将优先检索知识库内容后再回答" />
-                <div style={{ border: '1px solid #f0f0f0', borderRadius: 10, overflow: 'hidden' }}>
-                  {KNOWLEDGE_BASES.map((kb, idx) => (
-                    <div key={kb.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderBottom: idx < KNOWLEDGE_BASES.length - 1 ? '1px solid #f5f5f5' : 'none', background: data.kbEnabled[kb.id] ? '#f9f8ff' : '#fff' }}>
-                      <span style={{ fontSize: 16 }}>{kb.icon}</span>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 12, fontWeight: 500, color: data.kbEnabled[kb.id] ? '#6366F1' : '#333' }}>{kb.name}</div>
-                        <div style={{ fontSize: 11, color: '#bbb' }}>{kb.desc}</div>
-                      </div>
-                      <Switch size="small" checked={!!data.kbEnabled[kb.id]} onChange={v => update({ kbEnabled: { ...data.kbEnabled, [kb.id]: v } })} style={{ background: data.kbEnabled[kb.id] ? '#6366F1' : undefined }} />
-                    </div>
-                  ))}
-                </div>
-                <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <span style={{ fontSize: 11, color: '#bbb' }}>没有合适的知识库？</span>
-                  <span
-                    onClick={() => { onClose(); window.location.hash = 'knowledge-base'; }}
-                    style={{ fontSize: 11, color: '#6366F1', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 2, fontWeight: 500 }}
-                    onMouseEnter={e => (e.currentTarget as HTMLSpanElement).style.textDecoration = 'underline'}
-                    onMouseLeave={e => (e.currentTarget as HTMLSpanElement).style.textDecoration = 'none'}
-                  >
-                    ＋ 知识库
-                  </span>
-                </div>
-              </div>
+              <PickerSection
+                title="知识库"
+                desc="员工将优先检索知识库内容后再回答"
+                modalTitle="添加知识库"
+                items={KNOWLEDGE_BASES.map(kb => ({ id: kb.id, icon: kb.icon, name: kb.name, desc: kb.desc }))}
+                selectedIds={Object.keys(data.kbEnabled).filter(id => data.kbEnabled[id])}
+                onAdd={id => update({ kbEnabled: { ...data.kbEnabled, [id]: true } })}
+                onRemove={id => update({ kbEnabled: { ...data.kbEnabled, [id]: false } })}
+                accentColor="#6366F1"
+                linkText="＋ 去万卷新建知识库"
+                onLink={() => { window.open('/#knowledge-base', '_blank'); }}
+              />
 
               {/* ── 技能 ── */}
-              <div>
-                <SectionTitle title="技能" desc="选择该员工可调用的 Skills / 工作流" />
-                <div style={{ border: '1px solid #f0f0f0', borderRadius: 10, overflow: 'hidden' }}>
-                  {SKILL_LIST.map((sk, idx) => (
-                    <div key={sk.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', borderBottom: idx < SKILL_LIST.length - 1 ? '1px solid #f5f5f5' : 'none', background: data.skillEnabled[sk.id] ? '#fff' : '#fafafa' }}>
-                      <span style={{ fontSize: 16 }}>{sk.icon}</span>
-                      <div style={{ flex: 1 }}>
-                        <span style={{ fontSize: 12, fontWeight: 500, color: data.skillEnabled[sk.id] ? '#1a1a1a' : '#aaa', marginRight: 6 }}>{sk.name}</span>
-                        <Tag style={{ margin: 0, fontSize: 10, borderRadius: 4, color: sk.type === 'Skill' ? '#6366F1' : '#10B981', borderColor: sk.type === 'Skill' ? '#c7d2fe' : '#a7f3d0', background: sk.type === 'Skill' ? '#eef2ff' : '#f0fdf4' }}>{sk.type}</Tag>
-                      </div>
-                      <Switch size="small" checked={!!data.skillEnabled[sk.id]} onChange={v => update({ skillEnabled: { ...data.skillEnabled, [sk.id]: v } })} style={{ background: data.skillEnabled[sk.id] ? '#6366F1' : undefined }} />
-                    </div>
-                  ))}
-                </div>
-                <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <span style={{ fontSize: 11, color: '#bbb' }}>没有合适的技能/工作流？</span>
-                  <span
-                    onClick={() => { onClose(); window.location.hash = 'skill-center'; }}
-                    style={{ fontSize: 11, color: '#6366F1', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 2, fontWeight: 500 }}
-                    onMouseEnter={e => (e.currentTarget as HTMLSpanElement).style.textDecoration = 'underline'}
-                    onMouseLeave={e => (e.currentTarget as HTMLSpanElement).style.textDecoration = 'none'}
-                  >
-                    ＋ 技能
-                  </span>
-                  <span style={{ fontSize: 11, color: '#e0e0e0' }}>|</span>
-                  <span
-                    onClick={() => { onClose(); window.location.hash = 'workflow-center'; }}
-                    style={{ fontSize: 11, color: '#10B981', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 2, fontWeight: 500 }}
-                    onMouseEnter={e => (e.currentTarget as HTMLSpanElement).style.textDecoration = 'underline'}
-                    onMouseLeave={e => (e.currentTarget as HTMLSpanElement).style.textDecoration = 'none'}
-                  >
-                    ＋ 工作流
-                  </span>
-                </div>
-              </div>
+              <PickerSection
+                title="技能"
+                desc="选择该员工可调用的 Skills / 工作流"
+                modalTitle="添加技能 / 工作流"
+                items={SKILL_LIST.map(sk => ({
+                  id: sk.id, icon: sk.icon, name: sk.name, desc: sk.desc,
+                  tag: sk.type,
+                  tagColor: sk.type === 'Skill' ? '#6366F1' : '#10B981',
+                  tagBg:    sk.type === 'Skill' ? '#eef2ff'  : '#f0fdf4',
+                  tagBorder:sk.type === 'Skill' ? '#c7d2fe'  : '#a7f3d0',
+                }))}
+                selectedIds={Object.keys(data.skillEnabled).filter(id => data.skillEnabled[id])}
+                onAdd={id => update({ skillEnabled: { ...data.skillEnabled, [id]: true } })}
+                onRemove={id => update({ skillEnabled: { ...data.skillEnabled, [id]: false } })}
+                accentColor="#6366F1"
+                linkText="＋ 去万卷新建技能"
+                onLink={() => { window.open('/#skill-center', '_blank'); }}
+              />
 
               {/* ── MCP Server ── */}
-              <div>
-                <SectionTitle title="MCP Server" desc="绑定后员工可直接读写企业内部系统数据" />
-                <div style={{ border: '1px solid #f0f0f0', borderRadius: 10, overflow: 'hidden' }}>
-                  {MCP_SERVERS.map((mcp, idx) => (
-                    <div key={mcp.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderBottom: idx < MCP_SERVERS.length - 1 ? '1px solid #f5f5f5' : 'none', background: data.mcpEnabled[mcp.id] ? '#f0fdf4' : '#fafafa' }}>
-                      <span style={{ fontSize: 16 }}>{mcp.icon}</span>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 12, fontWeight: 500, color: data.mcpEnabled[mcp.id] ? '#10B981' : '#333', marginBottom: 1 }}>{mcp.name}</div>
-                        <div style={{ fontSize: 11, color: '#bbb' }}>{mcp.desc}</div>
-                      </div>
-                      <Switch size="small" checked={!!data.mcpEnabled[mcp.id]} onChange={v => update({ mcpEnabled: { ...data.mcpEnabled, [mcp.id]: v } })} style={{ background: data.mcpEnabled[mcp.id] ? '#10B981' : undefined }} />
-                    </div>
-                  ))}
-                </div>
-                <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <span style={{ fontSize: 11, color: '#bbb' }}>没有合适的 MCP Server？</span>
-                  <span
-                    onClick={() => { onClose(); window.location.hash = 'mcp-server'; }}
-                    style={{ fontSize: 11, color: '#10B981', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 2, fontWeight: 500 }}
-                    onMouseEnter={e => (e.currentTarget as HTMLSpanElement).style.textDecoration = 'underline'}
-                    onMouseLeave={e => (e.currentTarget as HTMLSpanElement).style.textDecoration = 'none'}
-                  >
-                    ＋ MCP Server
-                  </span>
-                </div>
-              </div>
+              <PickerSection
+                title="MCP Server"
+                desc="绑定后员工可直接读写企业内部系统数据"
+                modalTitle="添加 MCP Server"
+                items={MCP_SERVERS.map(m => ({ id: m.id, icon: m.icon, name: m.name, desc: m.desc }))}
+                selectedIds={Object.keys(data.mcpEnabled).filter(id => data.mcpEnabled[id])}
+                onAdd={id => update({ mcpEnabled: { ...data.mcpEnabled, [id]: true } })}
+                onRemove={id => update({ mcpEnabled: { ...data.mcpEnabled, [id]: false } })}
+                accentColor="#10B981"
+                linkText="＋ 去万卷新建 MCP Server"
+                onLink={() => { window.open('/#mcp-server', '_blank'); }}
+              />
 
-              {/* ── 分隔线 ── */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '4px 0' }}>
-                <div style={{ flex: 1, height: 1, background: '#f0f0f0' }} />
-                <div style={{ flex: 1, height: 1, background: '#f0f0f0' }} />
-              </div>
-
-              {/* ── 访问权限 ── */}
+              {/* ── 任务 ── */}
               <div>
-                <SectionTitle title="访问权限" desc="控制哪些人可以看到和使用该数字员工" />
-                <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-                  {[
-                    { value: 'company', icon: '🌐', label: '全公司可见', desc: '全员可见可用' },
-                    { value: 'private', icon: '🔒', label: '仅自己可见', desc: '私有，仅自己可用' },
-                    { value: 'custom',  icon: '👥', label: '指定部门/人员', desc: '选定范围可访问' },
-                  ].map(opt => (
-                    <div key={opt.value} onClick={() => update({ accessScope: opt.value, accessTargets: opt.value !== 'custom' ? [] : data.accessTargets })} style={{ flex: 1, padding: 12, borderRadius: 10, cursor: 'pointer', textAlign: 'center', border: data.accessScope === opt.value ? '1.5px solid #6366F1' : '1px solid #e8e8e8', background: data.accessScope === opt.value ? '#f5f4ff' : '#fafafa', transition: 'all 0.15s' }}>
-                      <div style={{ fontSize: 20, marginBottom: 6 }}>{opt.icon}</div>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: data.accessScope === opt.value ? '#6366F1' : '#1a1a1a', marginBottom: 2 }}>{opt.label}</div>
-                      <div style={{ fontSize: 11, color: '#999' }}>{opt.desc}</div>
-                    </div>
-                  ))}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>任务</div>
+                    <div style={{ fontSize: 12, color: '#999', marginTop: 2 }}>展示对应任务的执行流程</div>
+                  </div>
+                  {tasks.length > 0 && (
+                    <span onClick={() => setTasks([])} style={{ fontSize: 11, color: '#bbb', cursor: 'pointer', userSelect: 'none' }}>清空</span>
+                  )}
                 </div>
-                {data.accessScope === 'custom' && (
-                  <div style={{ marginTop: 4 }}>
-                    <div style={{ fontSize: 12, color: '#666', marginBottom: 6, fontWeight: 500 }}>选择可访问的人员或部门</div>
-                    <Select
-                      mode="multiple"
-                      placeholder="从企业组织架构中选择人员或部门"
-                      value={data.accessTargets}
-                      onChange={vals => update({ accessTargets: vals })}
-                      style={{ width: '100%' }}
-                      optionFilterProp="label"
-                      options={[
-                        { label: '── 部门 ──', value: '__dept__', disabled: true },
-                        ...DEPARTMENTS.map(d => ({ label: `🏢 ${d}`, value: `dept:${d}` })),
-                        { label: '── 人员 ──', value: '__person__', disabled: true },
-                        { label: '👤 张三（法务部）', value: 'user:zhangsan' },
-                        { label: '👤 李四（人力资源）', value: 'user:lisi' },
-                        { label: '👤 王五（财务部）', value: 'user:wangwu' },
-                        { label: '👤 赵六（技术部）', value: 'user:zhaoliu' },
-                        { label: '👤 陈七（产品部）', value: 'user:chenqi' },
-                        { label: '👤 周八（市场部）', value: 'user:zhouba' },
-                        { label: '👤 吴九（客户成功）', value: 'user:wujiu' },
-                        { label: '👤 郑十（运营部）', value: 'user:zhengshi' },
-                      ]}
-                    />
+                {tasks.length === 0 ? (
+                  <div style={{ padding: '20px 0', textAlign: 'center', color: '#d1d5db', fontSize: 12, border: '1px dashed #e8e8e8', borderRadius: 8 }}>
+                    <div style={{ fontSize: 22, marginBottom: 6 }}>📋</div>
+                    在右侧调试区发送任务后将在此展示
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    {tasks.slice().reverse().map((task, ridx) => {
+                      const taskNo = tasks.length - ridx;
+                      return (
+                        <div key={task.id} style={{ borderRadius: 10, border: '1px solid #e8e8f0', background: '#fff', overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+                          {/* 任务头部 */}
+                          <div
+                            onClick={() => setTasks(prev => prev.map(t => t.id === task.id ? { ...t, expanded: !t.expanded } : t))}
+                            style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid #f0f0f0', background: '#fafafa', cursor: 'pointer' }}
+                          >
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                任务 #{taskNo}：{task.title}
+                              </div>
+                              <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 1 }}>{task.time}</div>
+                            </div>
+                            <span style={{ fontSize: 10, color: '#bbb' }}>{task.expanded ? '▲' : '▼'}</span>
+                          </div>
+
+                          {task.expanded && (
+                            <div style={{ padding: '12px 14px 12px' }}>
+                              <div style={{ fontSize: 12, fontWeight: 600, color: '#1a1a1a', marginBottom: 10 }}>⚡ 执行流程</div>
+                              <div style={{ display: 'flex', alignItems: 'flex-start', overflowX: 'auto', paddingBottom: 4, gap: 0 }}>
+                                {(task.pipeStages || []).map((stage, idx) => (
+                                  <React.Fragment key={stage.id}>
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0, width: 52 }}>
+                                      <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#f0f0ff', border: '1.5px solid #c7d2fe', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15 }}>
+                                        {stage.icon}
+                                      </div>
+                                      <div style={{ fontSize: 10, color: '#6366F1', marginTop: 4, fontWeight: 500, textAlign: 'center', lineHeight: 1.2, width: 48 }}>{stage.label}</div>
+                                    </div>
+                                    {idx < (task.pipeStages || []).length - 1 && (
+                                      <div style={{ flex: 1, minWidth: 6, height: 1.5, background: '#c7d2fe', marginTop: 15 }} />
+                                    )}
+                                  </React.Fragment>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -491,101 +1346,530 @@ const EmployeeConfigPage: React.FC<{
 
           {/* 底部导航 */}
           <div style={{ padding: '14px 32px', borderTop: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', flexShrink: 0, background: '#fff' }}>
-            <Button onClick={onBack ?? onClose}>上一步</Button>
+            <Button onClick={onBack ?? onClose}>{readOnly ? '关闭' : '上一步'}</Button>
           </div>
         </div>
 
         {/* 右：配置预览面板 */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#f7f8fc', overflow: 'hidden' }}>
-          {/* 配置核查 */}
-          <div style={{ padding: '14px 20px', borderBottom: '1px solid #e8e8f0', background: '#fff', flexShrink: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <CheckCircleOutlined style={{ color: '#10B981' }} /> 配置核查
-              {allOk
-                ? <span style={{ marginLeft: 'auto', fontSize: 11, padding: '2px 8px', borderRadius: 5, background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0' }}>✓ 可以发布</span>
-                : <span style={{ marginLeft: 'auto', fontSize: 11, padding: '2px 8px', borderRadius: 5, background: '#fffbeb', color: '#d97706', border: '1px solid #fde68a' }}>⚠️ 待完善</span>
-              }
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {configItems.map(item => (
-                <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 5, background: item.ok ? '#f0fdf4' : '#fffbeb', border: `1px solid ${item.ok ? '#bbf7d0' : '#fde68a'}` }}>
-                  <span style={{ fontSize: 10 }}>{item.ok ? '✅' : '⚠️'}</span>
-                  <span style={{ fontSize: 11, color: item.ok ? '#16a34a' : '#d97706', fontWeight: 500 }}>{item.label}</span>
-                  <span style={{ fontSize: 10, color: '#999' }}>· {item.text}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
           {/* 调试预览 */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <div style={{ padding: '8px 20px', borderBottom: '1px solid #f0f0f0', background: '#fafafa', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
               <span style={{ fontSize: 12, fontWeight: 600, color: '#555' }}>调试预览</span>
-              <span style={{ fontSize: 11, color: '#bbb' }}>· 效果仅供参考</span>
+              <span style={{ fontSize: 11, color: '#bbb' }}>· 管理员工工作区、工具和身份</span>
             </div>
-            {/* 聊天内容区 */}
-            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '32px 24px 20px', background: '#f5f6fa' }}>
-              {/* 员工头像 */}
-              <div style={{ width: 80, height: 80, borderRadius: 22, background: getContentGradient(data.name, data.dept, data.domain, data.description), display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 32, fontWeight: 700, marginBottom: 16, boxShadow: '0 4px 20px rgba(99,102,241,0.25)', flexShrink: 0 }}>
-                {data.name.trim().charAt(0) || '✦'}
-              </div>
-              {/* 员工名称 */}
-              <div style={{ fontSize: 20, fontWeight: 700, color: '#1a1a1a', marginBottom: 24 }}>
-                {data.name || '数字员工'}
-              </div>
-              {/* 欢迎语 */}
-              <div style={{ width: '100%', background: '#fff', borderRadius: 14, padding: '16px 20px', marginBottom: 16, fontSize: 14, color: '#333', lineHeight: 1.7, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
-                {data.name
-                  ? `你好！我是${data.name}，${data.description ? data.description.slice(0, 60) + (data.description.length > 60 ? '，欢迎向我提问！' : '') : '专注于' + (data.domain || '企业业务') + '相关工作'}，让每一次工作协作都更高效~`
-                  : '你好！我是你的数字员工助手，有什么可以帮助你的？让我们一起高效工作~'}
-              </div>
-              {/* 建议问题 */}
-              {[
-                data.name ? `${data.name}能帮我做什么？` : '你能帮我做什么？',
-                data.domain ? `${data.domain}方面有哪些常见问题？` : '你擅长处理哪类任务？',
-                '如何更好地使用你的功能？',
-              ].map((q, idx) => (
-                <div key={idx}
-                  style={{ width: '100%', padding: '12px 16px', marginBottom: 10, border: '1px solid #e8e8e8', borderRadius: 10, fontSize: 13, color: '#333', cursor: 'pointer', background: '#fff', transition: 'all 0.15s' }}
-                  onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.borderColor = '#6366F1'; (e.currentTarget as HTMLDivElement).style.color = '#6366F1'; }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = '#e8e8e8'; (e.currentTarget as HTMLDivElement).style.color = '#333'; }}
-                >{q}</div>
+            {/* 对话消息区 */}
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', padding: '16px 16px 8px', gap: 10, background: '#f5f6fa' }}>
+              {chatMsgs.map((msg, i) => (
+                <div key={i} style={{ display: 'flex', flexDirection: msg.role === 'user' ? 'row-reverse' : 'row', alignItems: 'flex-end', gap: 8 }}>
+                  {msg.role === 'ai' && (
+                    <div style={{ width: 28, height: 28, borderRadius: 8, background: getContentGradient(data.name, data.dept, data.domain, data.description), display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
+                      {data.name.trim().charAt(0) || '✦'}
+                    </div>
+                  )}
+                  <div style={{ maxWidth: '78%', padding: '9px 13px', borderRadius: msg.role === 'user' ? '14px 4px 14px 14px' : '4px 14px 14px 14px', background: msg.role === 'user' ? '#6366F1' : '#fff', color: msg.role === 'user' ? '#fff' : '#1a1a1a', fontSize: 13, lineHeight: 1.6, boxShadow: '0 1px 4px rgba(0,0,0,0.08)', whiteSpace: 'pre-wrap' }}>
+                    {msg.content}
+                  </div>
+                </div>
               ))}
+              {chatLoading && (
+                <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8 }}>
+                  <div style={{ width: 28, height: 28, borderRadius: 8, background: getContentGradient(data.name, data.dept, data.domain, data.description), display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
+                    {data.name.trim().charAt(0) || '✦'}
+                  </div>
+                  <div style={{ padding: '9px 13px', borderRadius: '4px 14px 14px 14px', background: '#fff', fontSize: 13, color: '#bbb', boxShadow: '0 1px 4px rgba(0,0,0,0.08)' }}>···</div>
+                </div>
+              )}
+              <div ref={chatEndRef} />
             </div>
             {/* 底部输入栏 */}
-            <div style={{ padding: '10px 14px', borderTop: '1px solid #e8e8f0', background: '#fff', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-              <div style={{ width: 34, height: 34, borderRadius: 8, border: '1px solid #e8e8e8', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#bbb', fontSize: 14, background: '#fafafa', flexShrink: 0 }}>🗑</div>
-              <div style={{ flex: 1, padding: '8px 14px', border: '1px solid #e8e8e8', borderRadius: 24, fontSize: 12, color: '#bbb', background: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', userSelect: 'none' }}>请输入你的问题，支持对上传文件内容进行提问</div>
-              <div style={{ width: 34, height: 34, borderRadius: 8, border: '1px solid #e8e8e8', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#bbb', fontSize: 14, background: '#fafafa', flexShrink: 0 }}>📎</div>
-              <div style={{ width: 34, height: 34, borderRadius: 8, border: '1px solid #e8e8e8', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#bbb', fontSize: 14, background: '#fafafa', flexShrink: 0 }}>🎙</div>
-              <div style={{ width: 38, height: 38, borderRadius: 12, background: 'linear-gradient(135deg, #6366F1, #8B5CF6)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#fff', fontSize: 16, flexShrink: 0 }}>▶</div>
+            <div style={{ borderTop: '1px solid #e8e8f0', background: '#fff', flexShrink: 0, padding: '10px 14px' }}>
+              <input ref={chatFileRef} type="file" accept="*/*" style={{ display: 'none' }} onChange={e => { if (e.target.files?.[0]) { setChatMsgs(prev => [...prev, { role: 'user', content: `📎 ${e.target.files![0].name}` }]); e.target.value = ''; } }} />
+              <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #e8e8e8', borderRadius: 10, background: '#fff', padding: '6px 8px 6px 10px', gap: 8 }}>
+                <div
+                  onClick={() => chatFileRef.current?.click()}
+                  title="上传文件或图片"
+                  style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #e8e8e8', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#555', fontSize: 15, background: '#fafafa', flexShrink: 0 }}
+                  onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.borderColor = '#6366F1'}
+                  onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.borderColor = '#e8e8e8'}
+                >📎</div>
+                <input
+                  value={chatInput}
+                  onChange={e => setChatInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleChatSend(); } }}
+                  placeholder='例如：把名字改为法务助手、切换到国产安全模型...'
+                  style={{ flex: 1, border: 'none', outline: 'none', fontSize: 12, color: '#333', background: 'transparent', minWidth: 0 }}
+                />
+                <div
+                  onClick={handleChatSend}
+                  style={{ width: 34, height: 34, borderRadius: 9, background: chatInput.trim() ? 'linear-gradient(135deg, #6366F1, #8B5CF6)' : '#f0f0f0', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: chatInput.trim() ? 'pointer' : 'default', color: chatInput.trim() ? '#fff' : '#ccc', fontSize: 15, flexShrink: 0, transition: 'all 0.15s' }}
+                >▶</div>
+              </div>
             </div>
           </div>
         </div>
       </div>
+      <PublishVersionModal
+        open={empPublishOpen}
+        latestVersion=""
+        onClose={() => setEmpPublishOpen(false)}
+        onPublish={(version, _changelog, _scope) => {
+          setEmpPublishOpen(false);
+          if (onPublish) {
+            onPublish(data.name || '新员工');
+          } else {
+            onClose();
+          }
+          message.success(`数字员工「${data.name || '新员工'}」已上岗，版本 ${version}`);
+        }}
+      />
+
+      {/* 历史版本 Drawer */}
+      <Drawer
+        title={
+          <Space>
+            <HistoryOutlined />
+            <span>历史版本</span>
+            <Tag style={{ fontSize: 11, margin: 0 }}>{MOCK_EMPLOYEE_HISTORY.length} 条记录</Tag>
+          </Space>
+        }
+        placement="right"
+        width={420}
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        styles={{ body: { padding: '16px 20px' } }}
+      >
+        {/* 草稿入口 */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '10px 14px', marginBottom: 4, borderRadius: 8, background: '#f0fdf4', border: '1.5px solid #86efac' }}>
+          <Space size={6}>
+            <FileTextOutlined style={{ color: '#16a34a' }} />
+            <span style={{ fontSize: 13, color: '#15803d', fontWeight: 500 }}>草稿（当前编辑版本）</span>
+          </Space>
+          <Tag color="green" style={{ fontSize: 11, margin: 0 }}>当前</Tag>
+        </div>
+
+        <Divider style={{ margin: '12px 0 16px', fontSize: 12, color: '#94a3b8' }}>
+          {MOCK_EMPLOYEE_HISTORY.length} 条历史记录
+        </Divider>
+
+        <Timeline
+          items={[...MOCK_EMPLOYEE_HISTORY].reverse().map(ev => ({
+            dot: ev.kind === 'publish'
+              ? <TagOutlined style={{ color: '#6366F1', fontSize: 14 }} />
+              : <SaveOutlined style={{ color: '#94a3b8', fontSize: 12 }} />,
+            color: ev.kind === 'publish' ? '#6366F1' : '#cbd5e1',
+            children: (
+              <div style={{ marginBottom: 4 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3, flexWrap: 'wrap' as const }}>
+                  {ev.kind === 'publish' ? (
+                    <>
+                      <Tag color="purple" style={{ margin: 0, fontFamily: 'monospace', fontSize: 12, fontWeight: 600 }}>{ev.desc}</Tag>
+                      <Tag color="blue" style={{ margin: 0, fontSize: 11 }}>正式发布</Tag>
+                    </>
+                  ) : (
+                    <>
+                      <span style={{ fontSize: 12, color: '#475569', fontWeight: 500 }}>{ev.desc}</span>
+                      <Tag style={{ margin: 0, fontSize: 11, color: '#64748b', borderColor: '#cbd5e1', background: '#f8fafc' }}>草稿保存</Tag>
+                    </>
+                  )}
+                </div>
+                <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>
+                  {ev.user} · {ev.time}
+                </div>
+                {ev.kind === 'publish' && ev.version && (
+                  <>
+                    {ev.version.changelog && (
+                      <div style={{ fontSize: 12, color: '#64748b', fontStyle: 'italic', marginBottom: 4, paddingLeft: 8, borderLeft: '2px solid #e2e8f0', lineHeight: 1.5 }}>
+                        {ev.version.changelog}
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 6 }}>
+                      <span style={{ fontSize: 11, color: '#94a3b8' }}>公开范围：</span>
+                      <Tag style={{ fontSize: 11, margin: 0 }}>{SCOPE_LABELS[ev.version.scope].label}</Tag>
+                    </div>
+                    <Space size={6}>
+                      <Button
+                        size="small"
+                        icon={<EyeOutlined />}
+                        onClick={() => {
+                          setHistoryOpen(false);
+                          if (onViewVersion) {
+                            onViewVersion(ev.version!);
+                          }
+                        }}
+                      >查看版本</Button>
+                      {!readOnly && (
+                        <Button
+                          size="small"
+                          icon={<RollbackOutlined />}
+                          onClick={() => setInlineRollbackTarget(ev.version!)}
+                        >回滚</Button>
+                      )}
+                    </Space>
+                  </>
+                )}
+              </div>
+            ),
+          }))}
+        />
+      </Drawer>
+
+      {/* 内联回滚确认 Modal */}
+      <Modal
+        title={<span style={{ fontSize: 16, fontWeight: 600 }}>确认回滚</span>}
+        open={!!inlineRollbackTarget}
+        onCancel={() => setInlineRollbackTarget(null)}
+        footer={
+          <Space>
+            <Button onClick={() => setInlineRollbackTarget(null)}>取消</Button>
+            <Button
+              type="primary"
+              onClick={() => {
+                if (!inlineRollbackTarget) return;
+                setInlineRollbackTarget(null);
+                setHistoryOpen(false);
+                message.success(`已回滚至 ${inlineRollbackTarget.version}，请确认配置后重新上岗`);
+              }}
+              style={{ background: 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)', borderColor: 'transparent', borderRadius: 8 }}
+            >确定回滚</Button>
+          </Space>
+        }
+        width={520}
+      >
+        {inlineRollbackTarget && (
+          <div style={{ padding: '4px 0 8px' }}>
+            <div style={{ fontSize: 14, color: '#333', marginBottom: 16, lineHeight: 1.6 }}>
+              确定要将配置回滚到版本 <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#6366F1' }}>{inlineRollbackTarget.version}</span> 吗？
+            </div>
+            <ul style={{ margin: 0, paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <li style={{ fontSize: 14, color: '#333', lineHeight: 1.6 }}>配置恢复至 {inlineRollbackTarget.version} 版本状态，成为新的草稿</li>
+              <li style={{ fontSize: 14, color: '#333', lineHeight: 1.6 }}>可修改配置后重新上岗</li>
+              <li style={{ fontSize: 14, color: '#333', lineHeight: 1.6 }}>历史记录会保留，可随时回滚到其他版本</li>
+            </ul>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 };
 
 
-// ─── 版本管理 Drawer ───────────────────────────────────────
-const VersionDrawer: React.FC<{ open: boolean; onClose: () => void; employeeName: string }> = ({ open, onClose, employeeName }) => (
-  <Drawer title={`版本管理 · ${employeeName}`} open={open} onClose={onClose} width={480}>
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      {MOCK_VERSIONS.map(ver => (
-        <div key={ver.versionId} style={{ border: `1px solid ${ver.status === 'active' ? '#6366F1' : '#e8e8e8'}`, borderRadius: 10, padding: '14px 16px', background: ver.status === 'active' ? '#f5f4ff' : '#fff' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-            <span style={{ fontSize: 14, fontWeight: 700, color: ver.status === 'active' ? '#6366F1' : '#1a1a1a' }}>{ver.version}</span>
-            {ver.status === 'active' && <Tag color="purple" style={{ fontSize: 10, margin: 0 }}>当前版本</Tag>}
+// ─── 发布版本 Modal ────────────────────────────────────────
+const PublishVersionModal: React.FC<{
+  open: boolean;
+  latestVersion: string;
+  onClose: () => void;
+  onPublish: (version: string, changelog: string, scope: VisibilityScope) => void;
+}> = ({ open, latestVersion, onClose, onPublish }) => {
+  const [version, setVersion] = useState('');
+  const [changelog, setChangelog] = useState('');
+  const [scopeType, setScopeType] = useState<'company' | 'self' | 'custom' | ''>('');
+  const [orgSearch, setOrgSearch] = useState('');
+  const [selectedOrgs, setSelectedOrgs] = useState<string[]>([]);
+
+  React.useEffect(() => {
+    if (open) {
+      setVersion(nextVersion(latestVersion, 'patch'));
+      setChangelog('');
+      setScopeType('');
+      setOrgSearch('');
+      setSelectedOrgs([]);
+    }
+  }, [open, latestVersion]);
+
+  const handleConfirm = () => {
+    if (!/^v\d+\.\d+\.\d+$/.test(version)) {
+      message.error('版本号格式不正确，需为 vX.Y.Z');
+      return;
+    }
+    if (scopeType === 'custom' && selectedOrgs.length === 0) {
+      message.warning('请选择可见范围');
+      return;
+    }
+    const scope: VisibilityScope = scopeType === 'company' ? 'company' : scopeType === 'custom' ? 'team' : 'private';
+    onPublish(version, changelog, scope);
+    onClose();
+  };
+
+  return (
+    <Modal
+      title={
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 40, height: 40, borderRadius: 10, background: 'linear-gradient(135deg, #e8e7ff 0%, #d4d3ff 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <CloudUploadOutlined style={{ color: '#6366F1', fontSize: 20 }} />
           </div>
-          <div style={{ fontSize: 12, color: '#666', marginBottom: 8 }}>{ver.changelog}</div>
-          <div style={{ fontSize: 11, color: '#bbb' }}>{ver.publishedAt} · {ver.publishedBy}</div>
-          {ver.status === 'history' && <Button size="small" icon={<RollbackOutlined />} style={{ marginTop: 10, borderRadius: 6, fontSize: 12, color: '#6366F1', borderColor: '#6366F1' }} onClick={() => message.success(`已回滚到 ${ver.version}`)}>回滚到此版本</Button>}
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 16, color: '#1a1a1a' }}>发布新版本</div>
+            <div style={{ fontWeight: 400, fontSize: 13, color: '#888', marginTop: 2 }}>发布后将生成不可变的快照，请确保配置已通过调试验证。</div>
+          </div>
         </div>
-      ))}
-    </div>
-  </Drawer>
-);
+      }
+      open={open}
+      onCancel={onClose}
+      footer={
+        <Space>
+          <Button onClick={onClose} style={{ minWidth: 72 }}>取消</Button>
+          <Button type="primary" onClick={handleConfirm} style={{ background: 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)', border: 'none', minWidth: 96 }}>确认发布</Button>
+        </Space>
+      }
+      width={520}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 20, padding: '16px 0 4px' }}>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <span style={{ fontWeight: 600, fontSize: 14 }}>版本号 <span style={{ color: '#ff4d4f' }}>*</span></span>
+            {latestVersion && (
+              <span style={{ fontSize: 13, color: '#888', display: 'flex', alignItems: 'center', gap: 5 }}>
+                上次版本：<span style={{ padding: '1px 10px', borderRadius: 6, background: '#f0f0f0', color: '#555', fontSize: 13, fontFamily: 'monospace' }}>{latestVersion}</span>
+              </span>
+            )}
+          </div>
+          <Input
+            value={version}
+            onChange={e => setVersion(e.target.value)}
+            placeholder="v1.0.0"
+            prefix={<TagOutlined style={{ color: '#6366F1', fontSize: 14 }} />}
+            style={{ fontSize: 14, borderRadius: 8 }}
+          />
+          <div style={{ fontSize: 12, color: '#bbb', marginTop: 6 }}>已根据上次版本自动生成建议版本号，可手动修改，格式须为 vX.Y.Z</div>
+        </div>
+        <div>
+          <div style={{ fontWeight: 600, marginBottom: 8, fontSize: 14 }}>版本说明 / 变更日志</div>
+          <Input.TextArea
+            value={changelog}
+            onChange={e => setChangelog(e.target.value)}
+            rows={4}
+            placeholder="简要描述本次更新的内容..."
+            maxLength={500}
+            style={{ borderRadius: 8, resize: 'none' }}
+          />
+        </div>
+        <div>
+          <div style={{ fontWeight: 600, marginBottom: 8, fontSize: 14 }}>
+            公开范围 <span style={{ color: '#888', fontWeight: 400, fontSize: 13 }}>（为空则仅本人可见）</span>
+          </div>
+          <Select
+            value={scopeType || undefined}
+            onChange={(v: 'company' | 'self' | 'custom') => { setScopeType(v); setSelectedOrgs([]); setOrgSearch(''); }}
+            style={{ width: '100%' }}
+            placeholder="请选择公开范围"
+            allowClear
+            onClear={() => { setScopeType(''); setSelectedOrgs([]); setOrgSearch(''); }}
+            optionLabelProp="label"
+            options={[
+              { label: '全公司可见', value: 'company' },
+              { label: '仅自己可见', value: 'self' },
+              { label: '指定部门/人员', value: 'custom' },
+            ]}
+            optionRender={(option) => {
+              const iconMap: Record<string, React.ReactNode> = {
+                company: <GlobalOutlined style={{ color: '#6366F1', fontSize: 14 }} />,
+                self: <LockOutlined style={{ color: '#6366F1', fontSize: 14 }} />,
+                custom: <TeamOutlined style={{ color: '#6366F1', fontSize: 14 }} />,
+              };
+              return (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 2px' }}>
+                  <div style={{ width: 28, height: 28, borderRadius: 6, background: '#f0f0ff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    {iconMap[option.value as string]}
+                  </div>
+                  <span style={{ fontSize: 13, color: '#1a1a1a' }}>{option.label}</span>
+                </div>
+              );
+            }}
+          />
+          {!scopeType && <div style={{ fontSize: 11, color: '#bbb', marginTop: 4 }}>未选择时默认仅自己可见</div>}
+          {scopeType === 'custom' && (
+            <div style={{ marginTop: 10 }}>
+              <Input
+                prefix={<SearchOutlined style={{ color: '#bbb' }} />}
+                placeholder="搜索部门..."
+                value={orgSearch}
+                onChange={e => setOrgSearch(e.target.value)}
+                style={{ borderRadius: 8, marginBottom: 8 }}
+                allowClear
+              />
+              <div style={{ border: '1px solid #f0f0f0', borderRadius: 10, overflow: 'hidden', maxHeight: 200, overflowY: 'auto' }}>
+                {ORG_TREE.filter(o => !orgSearch.trim() || o.name.includes(orgSearch.trim()) || o.path.includes(orgSearch.trim())).map((org, idx, arr) => {
+                  const checked = selectedOrgs.includes(org.id);
+                  return (
+                    <div
+                      key={org.id}
+                      onClick={() => setSelectedOrgs(prev => checked ? prev.filter(id => id !== org.id) : [...prev, org.id])}
+                      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderBottom: idx < arr.length - 1 ? '1px solid #f5f5f5' : 'none', cursor: 'pointer', background: checked ? '#f5f4ff' : 'transparent', transition: 'background 0.12s' }}
+                      onMouseEnter={e => { if (!checked) (e.currentTarget as HTMLDivElement).style.background = '#fafafa'; }}
+                      onMouseLeave={e => { if (!checked) (e.currentTarget as HTMLDivElement).style.background = checked ? '#f5f4ff' : 'transparent'; }}
+                    >
+                      <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg, #6366F1, #8B5CF6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <TeamOutlined style={{ color: '#fff', fontSize: 13 }} />
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 12, fontWeight: checked ? 600 : 400, color: checked ? '#6366F1' : '#1a1a1a' }}>{org.name}</div>
+                        {org.path !== org.name && <div style={{ fontSize: 10, color: '#bbb', marginTop: 1 }}>{org.path}</div>}
+                      </div>
+                      <div style={{ width: 15, height: 15, borderRadius: 3, border: checked ? 'none' : '1.5px solid #d1d5db', background: checked ? '#6366F1' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        {checked && <span style={{ color: '#fff', fontSize: 9, fontWeight: 700 }}>✓</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {selectedOrgs.length > 0 && (
+                <div style={{ marginTop: 6, fontSize: 11, color: '#6366F1' }}>已选 {selectedOrgs.length} 个部门/人员</div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </Modal>
+  );
+};
+
+// ─── 版本管理 Drawer ───────────────────────────────────────
+const VersionDrawer: React.FC<{
+  open: boolean;
+  onClose: () => void;
+  employee: DigitalEmployeeItem | null;
+  onViewVersion: (version: EmployeeVersion, employee: DigitalEmployeeItem) => void;
+  onRollback: (version: EmployeeVersion, employee: DigitalEmployeeItem) => void;
+}> = ({ open, onClose, employee, onViewVersion, onRollback }) => {
+  const [rollbackTarget, setRollbackTarget] = useState<EmployeeVersion | null>(null);
+  const [history] = useState<EmployeeHistoryEvent[]>(MOCK_EMPLOYEE_HISTORY);
+
+  if (!employee) return null;
+
+  const handleRollbackConfirm = () => {
+    if (!rollbackTarget) return;
+    setRollbackTarget(null);
+    onClose();
+    onRollback(rollbackTarget, employee);
+  };
+
+  return (
+    <>
+      <Drawer
+        title={
+          <Space>
+            <HistoryOutlined />
+            <span>版本控制 · {employee.name}</span>
+            <Tag style={{ fontSize: 11, margin: 0 }}>{history.length} 条记录</Tag>
+          </Space>
+        }
+        placement="right"
+        width={440}
+        open={open}
+        onClose={onClose}
+        styles={{ body: { padding: '16px 20px' } }}
+      >
+        {/* 草稿入口 */}
+        <div
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            gap: 8, padding: '10px 14px', marginBottom: 4, borderRadius: 8,
+            background: '#f0fdf4', border: '1.5px solid #86efac',
+          }}
+        >
+          <Space size={6}>
+            <FileTextOutlined style={{ color: '#16a34a' }} />
+            <span style={{ fontSize: 13, color: '#15803d', fontWeight: 500 }}>
+              草稿（当前编辑版本）
+            </span>
+          </Space>
+          <Tag color="green" style={{ fontSize: 11, margin: 0 }}>当前</Tag>
+        </div>
+
+        <Divider style={{ margin: '12px 0 16px', fontSize: 12, color: '#94a3b8' }}>
+          {history.length} 条历史记录
+        </Divider>
+
+        <Timeline
+          items={[...history].reverse().map(ev => ({
+            dot: ev.kind === 'publish'
+              ? <TagOutlined style={{ color: '#6366F1', fontSize: 14 }} />
+              : <SaveOutlined style={{ color: '#94a3b8', fontSize: 12 }} />,
+            color: ev.kind === 'publish' ? '#6366F1' : '#cbd5e1',
+            children: (
+              <div style={{ marginBottom: 4 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3, flexWrap: 'wrap' as const }}>
+                  {ev.kind === 'publish' ? (
+                    <>
+                      <Tag color="purple" style={{ margin: 0, fontFamily: 'monospace', fontSize: 12, fontWeight: 600 }}>{ev.desc}</Tag>
+                      <Tag color="blue" style={{ margin: 0, fontSize: 11 }}>正式发布</Tag>
+                    </>
+                  ) : (
+                    <>
+                      <span style={{ fontSize: 12, color: '#475569', fontWeight: 500 }}>{ev.desc}</span>
+                      <Tag style={{ margin: 0, fontSize: 11, color: '#64748b', borderColor: '#cbd5e1', background: '#f8fafc' }}>草稿保存</Tag>
+                    </>
+                  )}
+                </div>
+                <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>
+                  {ev.user} · {ev.time}
+                </div>
+                {ev.kind === 'publish' && ev.version && (
+                  <>
+                    {ev.version.changelog && (
+                      <div style={{ fontSize: 12, color: '#64748b', fontStyle: 'italic', marginBottom: 4, paddingLeft: 8, borderLeft: '2px solid #e2e8f0', lineHeight: 1.5 }}>
+                        {ev.version.changelog}
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 6 }}>
+                      <span style={{ fontSize: 11, color: '#94a3b8' }}>公开范围：</span>
+                      <Tag style={{ fontSize: 11, margin: 0 }}>{SCOPE_LABELS[ev.version.scope].label}</Tag>
+                    </div>
+                    <Space size={6}>
+                      <Button
+                        size="small"
+                        icon={<EyeOutlined />}
+                        onClick={() => { onClose(); onViewVersion(ev.version!, employee); }}
+                      >查看版本</Button>
+                      <Button
+                        size="small"
+                        icon={<RollbackOutlined />}
+                        onClick={() => setRollbackTarget(ev.version!)}
+                      >回滚</Button>
+                    </Space>
+                  </>
+                )}
+              </div>
+            ),
+          }))}
+        />
+      </Drawer>
+
+      {/* 回滚确认弹窗 */}
+      <Modal
+        title={<span style={{ fontSize: 16, fontWeight: 600 }}>确认回滚</span>}
+        open={!!rollbackTarget}
+        onCancel={() => setRollbackTarget(null)}
+        footer={
+          <Space>
+            <Button onClick={() => setRollbackTarget(null)}>取消</Button>
+            <Button
+              type="primary"
+              onClick={handleRollbackConfirm}
+              style={{ background: 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)', borderColor: 'transparent', borderRadius: 8 }}
+            >确定回滚</Button>
+          </Space>
+        }
+        width={520}
+      >
+        {rollbackTarget && (
+          <div style={{ padding: '4px 0 8px' }}>
+            <div style={{ fontSize: 14, color: '#333', marginBottom: 16, lineHeight: 1.6 }}>
+              确定要将内容回滚到版本 <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#6366F1' }}>{rollbackTarget.version}</span> 吗？
+            </div>
+            <div style={{ marginBottom: 6, fontWeight: 600, fontSize: 14, color: '#111' }}>此操作会：</div>
+            <ul style={{ margin: 0, paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <li style={{ fontSize: 14, color: '#333', lineHeight: 1.6 }}>员工配置恢复至 {rollbackTarget.version} 版本状态，成为新的草稿</li>
+              <li style={{ fontSize: 14, color: '#333', lineHeight: 1.6 }}>草稿支持修改配置后重新上岗</li>
+              <li style={{ fontSize: 14, color: '#333', lineHeight: 1.6 }}>历史记录会保留，可随时回滚到其他版本</li>
+            </ul>
+          </div>
+        )}
+      </Modal>
+    </>
+  );
+};
 
 // ─── 主组件：数字员工库 ────────────────────────────────────
 const DigitalEmployeeLibrary: React.FC = () => {
@@ -697,6 +1981,12 @@ const DigitalEmployeeLibrary: React.FC = () => {
   const [versionDrawerOpen, setVersionDrawerOpen] = useState(false);
   const [apiDrawerOpen, setApiDrawerOpen]       = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<DigitalEmployeeItem | null>(null);
+  // 查看版本（只读配置页）
+  const [viewVersionOpen, setViewVersionOpen]   = useState(false);
+  const [viewVersionData, setViewVersionData]   = useState<{ employee: DigitalEmployeeItem; version: EmployeeVersion } | null>(null);
+  // 回滚（草稿编辑配置页）
+  const [rollbackDraftOpen, setRollbackDraftOpen] = useState(false);
+  const [rollbackDraftData, setRollbackDraftData] = useState<{ employee: DigitalEmployeeItem; version: EmployeeVersion } | null>(null);
 
   const filteredEmployees = employees.filter(e => {
     const matchSearch = !searchText || e.name.includes(searchText) || e.description.includes(searchText);
@@ -705,11 +1995,25 @@ const DigitalEmployeeLibrary: React.FC = () => {
     return matchSearch && matchStatus && matchDomain;
   });
 
-  const handleStatusChange = (id: string, newStatus: EmployeeStatus) => {
+  // ── 上岗发布 Modal ────────────────────────────────────────
+  const [publishVersionOpen, setPublishVersionOpen] = useState(false);
+  const [publishEmpId, setPublishEmpId]   = useState<string | null>(null);
+  const [publishEmpName, setPublishEmpName] = useState('');
+
+  const openPublishModal = (id: string) => {
+    const emp = employees.find(e => e.id === id);
+    setPublishEmpId(id);
+    setPublishEmpName(emp?.name ?? '');
+    setPublishVersionOpen(true);
+  };
+
+  const handleStatusChange = (id: string, newStatus: EmployeeStatus, silent = false) => {
     employeeStore.updateEmployee(id, { status: newStatus as any });
     setLocalOverrides(prev => ({ ...prev, [id]: { ...prev[id], status: newStatus } }));
-    const labels: Record<string, string> = { published: '已发布上线', paused: '已暂停', archived: '已归档' };
-    message.success(labels[newStatus] || '状态已更新');
+    if (!silent) {
+      const labels: Record<string, string> = { published: '已上岗', paused: '已暂停', archived: '已归档' };
+      message.success(labels[newStatus] || '状态已更新');
+    }
   };
 
   // ── 卡片视图 ────────────────────────────────────────────
@@ -772,9 +2076,9 @@ const DigitalEmployeeLibrary: React.FC = () => {
                 <Button size="small" type="text" icon={<BranchesOutlined />} style={{ color: '#6366F1', fontSize: 12 }} onClick={() => { setSelectedEmployee(r); setVersionDrawerOpen(true); }}>版本</Button>
                 <Button size="small" type="text" icon={<ApiOutlined />} style={{ color: '#6366F1', fontSize: 12 }} onClick={() => { setSelectedEmployee(r); setApiDrawerOpen(true); }}>接入</Button>
                 <div style={{ flex: 1 }} />
-                {(r.status === 'draft' || r.status === 'testing') && <Button size="small" type="text" icon={<CloudUploadOutlined />} style={{ color: '#10b981', fontSize: 12 }} onClick={() => handleStatusChange(r.id, 'published')}>发布</Button>}
+                {(r.status === 'draft' || r.status === 'testing') && <Button size="small" type="text" icon={<CloudUploadOutlined />} style={{ color: '#10b981', fontSize: 12 }} onClick={() => openPublishModal(r.id)}>上岗</Button>}
                 {r.status === 'published' && <Button size="small" type="text" icon={<PauseCircleOutlined />} style={{ color: '#f59e0b', fontSize: 12 }} onClick={() => handleStatusChange(r.id, 'paused')}>暂停</Button>}
-                {r.status === 'paused' && <Button size="small" type="text" icon={<PlayCircleOutlined />} style={{ color: '#10b981', fontSize: 12 }} onClick={() => handleStatusChange(r.id, 'published')}>恢复</Button>}
+                {r.status === 'paused' && <Button size="small" type="text" icon={<PlayCircleOutlined />} style={{ color: '#10b981', fontSize: 12 }} onClick={() => openPublishModal(r.id)}>恢复</Button>}
               </div>
             </div>
           </div>
@@ -811,9 +2115,9 @@ const DigitalEmployeeLibrary: React.FC = () => {
           <Button size="small" type="text" icon={<BranchesOutlined />} style={{ color: '#6366F1', fontSize: 12 }} onClick={() => { setSelectedEmployee(r); setVersionDrawerOpen(true); }}>版本</Button>
           <Button size="small" type="text" icon={<ApiOutlined />} style={{ color: '#6366F1', fontSize: 12 }} onClick={() => { setSelectedEmployee(r); setApiDrawerOpen(true); }}>接入</Button>
           <Divider type="vertical" style={{ margin: '0 2px' }} />
-          {(r.status === 'draft' || r.status === 'testing') && <Button size="small" type="text" icon={<CloudUploadOutlined />} style={{ color: '#10b981', fontSize: 12 }} onClick={() => handleStatusChange(r.id, 'published')}>发布</Button>}
+          {(r.status === 'draft' || r.status === 'testing') && <Button size="small" type="text" icon={<CloudUploadOutlined />} style={{ color: '#10b981', fontSize: 12 }} onClick={() => openPublishModal(r.id)}>上岗</Button>}
           {r.status === 'published' && <Button size="small" type="text" icon={<PauseCircleOutlined />} style={{ color: '#f59e0b', fontSize: 12 }} onClick={() => handleStatusChange(r.id, 'paused')}>暂停</Button>}
-          {r.status === 'paused' && <Button size="small" type="text" icon={<PlayCircleOutlined />} style={{ color: '#10b981', fontSize: 12 }} onClick={() => handleStatusChange(r.id, 'published')}>恢复</Button>}
+          {r.status === 'paused' && <Button size="small" type="text" icon={<PlayCircleOutlined />} style={{ color: '#10b981', fontSize: 12 }} onClick={() => openPublishModal(r.id)}>恢复</Button>}
           <Button size="small" type="text" icon={<StopOutlined />} style={{ color: '#ff4d4f', fontSize: 12 }} onClick={() => Modal.confirm({ title: `确认归档「${r.name}」？`, content: '归档后不可再调用', okText: '归档', okButtonProps: { danger: true }, cancelText: '取消', onOk: () => handleStatusChange(r.id, 'archived') })}>归档</Button>
         </div>
       ),
@@ -1110,6 +2414,13 @@ const DigitalEmployeeLibrary: React.FC = () => {
         <EmployeeConfigPage
           onClose={() => { setCreateModalOpen(false); setCreateInitialData({name:'',description:'',dept:'',domain:'',role:''}); }}
           onBack={() => { setCreateModalOpen(false); setCreateWizardOpen(true); }}
+          onPublish={(name) => {
+            setCreateModalOpen(false);
+            setCreateInitialData({name:'',description:'',dept:'',domain:'',role:''});
+            setPublishEmpId('__new__');
+            setPublishEmpName(name);
+            setPublishVersionOpen(true);
+          }}
           initialData={createInitialData.name ? { name: createInitialData.name, description: createInitialData.description, dept: createInitialData.dept, domain: createInitialData.domain, role: createInitialData.role } : undefined}
         />
       )}
@@ -1118,13 +2429,76 @@ const DigitalEmployeeLibrary: React.FC = () => {
       {editModalOpen && (
         <EmployeeConfigPage
           onClose={() => { setEditModalOpen(false); setEditEmployee(null); }}
+          onPublish={(name) => {
+            const targetId = editEmployee?.id ?? null;
+            setEditModalOpen(false);
+            setEditEmployee(null);
+            setPublishEmpId(targetId);
+            setPublishEmpName(name || editEmployee?.name || '');
+            setPublishVersionOpen(true);
+          }}
           initialData={{ name: editEmployee?.name ?? '', dept: editEmployee?.dept ?? '', description: editEmployee?.description ?? '', domain: editEmployee?.domain ?? '' }}
           isEdit
         />
       )}
 
+      {/* 查看历史版本（只读） */}
+      {viewVersionOpen && viewVersionData && (
+        <EmployeeConfigPage
+          onClose={() => { setViewVersionOpen(false); setViewVersionData(null); }}
+          initialData={{ name: viewVersionData.employee.name, dept: viewVersionData.employee.dept, description: viewVersionData.employee.description, domain: viewVersionData.employee.domain }}
+          readOnly
+          readOnlyVersion={viewVersionData.version.version}
+          isEdit
+        />
+      )}
+
+      {/* 回滚草稿（可编辑，重新上岗） */}
+      {rollbackDraftOpen && rollbackDraftData && (
+        <EmployeeConfigPage
+          onClose={() => { setRollbackDraftOpen(false); setRollbackDraftData(null); }}
+          onPublish={(name) => {
+            const targetId = rollbackDraftData.employee.id;
+            setRollbackDraftOpen(false);
+            setRollbackDraftData(null);
+            setPublishEmpId(targetId);
+            setPublishEmpName(name || rollbackDraftData.employee.name);
+            setPublishVersionOpen(true);
+          }}
+          initialData={{ name: rollbackDraftData.employee.name, dept: rollbackDraftData.employee.dept, description: rollbackDraftData.employee.description, domain: rollbackDraftData.employee.domain }}
+          isEdit
+        />
+      )}
+
       {/* 版本 Drawer */}
-      {selectedEmployee && <VersionDrawer open={versionDrawerOpen} onClose={() => setVersionDrawerOpen(false)} employeeName={selectedEmployee.name} />}
+      <VersionDrawer
+        open={versionDrawerOpen}
+        onClose={() => setVersionDrawerOpen(false)}
+        employee={selectedEmployee}
+        onViewVersion={(ver, emp) => {
+          setViewVersionData({ employee: emp, version: ver });
+          setViewVersionOpen(true);
+        }}
+        onRollback={(ver, emp) => {
+          setRollbackDraftData({ employee: emp, version: ver });
+          setRollbackDraftOpen(true);
+          message.success(`已回滚到 ${ver.version}，进入草稿编辑`);
+        }}
+      />
+
+      {/* 上岗发布版本 Modal */}
+      <PublishVersionModal
+        open={publishVersionOpen}
+        latestVersion=""
+        onClose={() => setPublishVersionOpen(false)}
+        onPublish={(version, _changelog, _scope) => {
+          if (publishEmpId && publishEmpId !== '__new__') {
+            handleStatusChange(publishEmpId, 'published', true);
+          }
+          message.success(`「${publishEmpName || '新员工'}」已上岗，版本 ${version}`);
+          setPublishVersionOpen(false);
+        }}
+      />
 
       {/* 多入口 API Drawer */}
       <Drawer title={`多入口接入 · ${selectedEmployee?.name || ''}`} open={apiDrawerOpen} onClose={() => setApiDrawerOpen(false)} width={520}>

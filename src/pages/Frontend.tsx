@@ -1436,6 +1436,9 @@ export const DigitalEmployeePanel: React.FC = () => {
             ) : tasks.map(task => {
               const cfg = taskStatusCfg[task.status] ?? taskStatusCfg.waiting;
               const isSelected = selectedTaskId === task.id;
+              const hasHumanNode = task.steps.some(s =>
+                (s.name?.includes('人工') || s.desc?.includes('人工')) && s.status !== 'done'
+              );
               return (
                 <div
                   key={task.id}
@@ -1443,7 +1446,7 @@ export const DigitalEmployeePanel: React.FC = () => {
                   style={{
                     background: isSelected ? 'linear-gradient(135deg,#EEF2FF,#F5F3FF)' : '#fafafa',
                     borderRadius: 9,
-                    border: isSelected ? `1.5px solid #6366F1` : `1px solid ${cfg.color}28`,
+                    border: isSelected ? `1.5px solid #6366F1` : hasHumanNode ? '1px solid #fde68a' : `1px solid ${cfg.color}28`,
                     cursor: 'pointer',
                     transition: 'all 0.15s',
                     padding: '10px 12px',
@@ -1454,6 +1457,9 @@ export const DigitalEmployeePanel: React.FC = () => {
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: 7, marginBottom: 6 }}>
                     <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 7, background: cfg.bg, color: cfg.color, fontWeight: 600, flexShrink: 0, marginTop: 1 }}>{cfg.label}</span>
                     <div style={{ flex: 1, fontSize: 12, color: isSelected ? '#4338CA' : '#333', lineHeight: 1.5, fontWeight: isSelected ? 600 : 500 }}>{task.title}</div>
+                    {hasHumanNode && (
+                      <span title="含人工复核节点" style={{ flexShrink: 0, fontSize: 10, padding: '1px 5px', borderRadius: 6, background: '#fef3c7', color: '#d97706', fontWeight: 600, border: '1px solid #fde68a', marginTop: 1 }}>👤</span>
+                    )}
                   </div>
                   {task.result && !isSelected && (
                     <div style={{ fontSize: 10, color: '#666', marginBottom: 5, lineHeight: 1.4, padding: '4px 7px', background: '#fff', borderRadius: 5 }}>💡 {task.result}</div>
