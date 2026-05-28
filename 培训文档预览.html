@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>数字员工平台 · 第一期产品培训文档</title>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+            line-height: 1.8;
+            color: #333;
+            background: #f5f7fa;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: white;
+            padding: 48px 60px;
+            border-radius: 12px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+        }
+        h1 {
+            font-size: 32px;
+            font-weight: 700;
+            color: #1a1a1a;
+            margin-bottom: 12px;
+            padding-bottom: 20px;
+            border-bottom: 3px solid #6366F1;
+        }
+        h2 {
+            font-size: 24px;
+            font-weight: 600;
+            color: #1a1a1a;
+            margin-top: 48px;
+            margin-bottom: 20px;
+            padding-left: 12px;
+            border-left: 4px solid #6366F1;
+        }
+        h3 {
+            font-size: 18px;
+            font-weight: 600;
+            color: #374151;
+            margin-top: 32px;
+            margin-bottom: 16px;
+        }
+        p {
+            margin-bottom: 16px;
+            color: #4b5563;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 24px 0;
+            font-size: 14px;
+        }
+        th {
+            background: #f3f4f6;
+            color: #374151;
+            font-weight: 600;
+            padding: 12px 16px;
+            text-align: left;
+            border: 1px solid #e5e7eb;
+        }
+        td {
+            padding: 12px 16px;
+            border: 1px solid #e5e7eb;
+            color: #4b5563;
+        }
+        tr:nth-child(even) {
+            background: #f9fafb;
+        }
+        code {
+            background: #f3f4f6;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+            font-size: 0.9em;
+            color: #e11d48;
+        }
+        pre {
+            background: #1f2937;
+            color: #f3f4f6;
+            padding: 20px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin: 20px 0;
+            line-height: 1.6;
+        }
+        pre code {
+            background: none;
+            color: #f3f4f6;
+            padding: 0;
+        }
+        blockquote {
+            border-left: 4px solid #6366F1;
+            background: #eef2ff;
+            padding: 16px 20px;
+            margin: 20px 0;
+            color: #4338ca;
+            font-style: normal;
+        }
+        ul, ol {
+            margin: 16px 0;
+            padding-left: 32px;
+        }
+        li {
+            margin: 8px 0;
+            color: #4b5563;
+        }
+        strong {
+            color: #1a1a1a;
+            font-weight: 600;
+        }
+        hr {
+            border: none;
+            border-top: 2px solid #e5e7eb;
+            margin: 40px 0;
+        }
+        .print-btn {
+            position: fixed;
+            top: 30px;
+            right: 30px;
+            padding: 10px 20px;
+            background: linear-gradient(135deg, #6366F1, #8B5CF6);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+            transition: all 0.2s;
+        }
+        .print-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(99, 102, 241, 0.4);
+        }
+        @media print {
+            body {
+                background: white;
+                padding: 0;
+            }
+            .container {
+                box-shadow: none;
+                padding: 20px;
+            }
+            .print-btn {
+                display: none;
+            }
+        }
+        @media (max-width: 768px) {
+            .container {
+                padding: 24px 20px;
+            }
+            h1 {
+                font-size: 24px;
+            }
+            h2 {
+                font-size: 20px;
+            }
+            .print-btn {
+                top: 15px;
+                right: 15px;
+                padding: 8px 16px;
+                font-size: 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <button class="print-btn" onclick="window.print()">🖨️ 打印文档</button>
+    <div class="container" id="content">
+        <p style="text-align: center; color: #999; padding: 60px 0;">正在加载文档...</p>
+    </div>
+    <script>
+        fetch('/产品培训文档_数字员工平台_第一期.md')
+            .then(response => response.text())
+            .then(markdown => {
+                document.getElementById('content').innerHTML = marked.parse(markdown);
+            })
+            .catch(error => {
+                document.getElementById('content').innerHTML = '<p style="color: red; text-align: center;">文档加载失败，请确认文件路径是否正确</p>';
+                console.error('加载失败:', error);
+            });
+    </script>
+</body>
+</html>
